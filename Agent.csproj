@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.10"/>
+  </ItemGroup>
+
+  <!-- 编译期引用组件源码（clone 到此，不入库）：deps 只作为 ProjectReference，不参与本项目源码编译；
+       ExcludeAssets=runtime + Private=false：组件 dll 绝不复制到空壳输出（运行时从 components 加载下载的 dll） -->
+  <ItemGroup Condition="Exists('deps/WTangent.Server/WtAgent.Server.csproj')">
+    <ProjectReference Include="deps/WTangent.Server/WtAgent.Server.csproj" ExcludeAssets="runtime" Private="false"/>
+  </ItemGroup>
+  <ItemGroup Condition="Exists('deps/WTangent.Tui/WtAgent.Client.csproj')">
+    <ProjectReference Include="deps/WTangent.Tui/WtAgent.Client.csproj" ExcludeAssets="runtime" Private="false"/>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="deps/**"/>
+    <None Remove="deps/**"/>
+    <Content Remove="deps/**"/>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>wtangent</AssemblyName>
+    <Version>0.6.0</Version>
+    <!-- 引用组件项目（同为 Exe）时指定空壳自己的入口 -->
+    <StartupObject>WTangent.Program</StartupObject>
+  </PropertyGroup>
+
+</Project>

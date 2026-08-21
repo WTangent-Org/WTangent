@@ -1,0 +1,32 @@
+name: ci
+
+# 提交级构建检查：push main / 任何 PR（含 release-please PR）都编译验证，失败则禁止合并。
+# 空壳编译期引用组件（deps/ 下 checkout），组件仓坏了空壳构建即挂——这是有意的依赖。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: wtommy932/Agent.Server
+          path: deps/Agent.Server
+
+      - uses: actions/checkout@v4
+        with:
+          repository: wtommy932/Agent.Client
+          path: deps/Agent.Client
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: dotnet build（Release）
+        run: dotnet build Agent.csproj -c Release --nologo

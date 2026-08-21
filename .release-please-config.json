@@ -1,0 +1,18 @@
+{
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "include-v-in-tag": true,
+      "initial-version": "0.1.0",
+      "extra-files": [
+        { "type": "xml", "path": "Agent.csproj", "xpath": "//Version" }
+      ],
+      "changelog-sections": [
+        { "type": "feat", "section": "✨ 新功能" },
+        { "type": "fix", "section": "🐛 修复" },
+        { "type": "imp", "section": "🔧 改进" },
+        { "type": "chore", "section": "🧹 其他" }
+      ]
+    }
+  }
+}
