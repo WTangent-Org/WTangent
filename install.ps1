@@ -62,4 +62,9 @@ if ($userPath -split ';' -notcontains $destDir) {
 }
 
 & $exe --help 2>&1 | Select-Object -First 2
+
+# 自动安装官方组件（serve/tui/client/git；失败不阻断，可手动 wtangent install）
+Write-Host "[install] 自动安装官方组件（serve/tui/client/git）…"
+try { & $exe install 2>&1 | Select-Object -Last 1 } catch { Write-Host "[install] 官方组件安装失败（可手动 wtangent install）" }
+
 Write-Host "[install] 完成（当前会话用：`$env:Path = '$destDir;' + `$env:Path）"

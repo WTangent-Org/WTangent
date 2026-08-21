@@ -63,9 +63,9 @@ public static class Program
         };
     }
 
-    /// <summary>注册组件命令：已装 → 加载 dll 注册真实命令（--help 直接显示）；未装 → 简单占位（提示安装）；
-    /// web 类组件（无命令）不注册；重名防御（tui 的 web 命令 vs web 组件）。
-    /// 重写规则：仅 serve/tui/gui 组件可覆盖重名命令（后注册覆盖先注册）；其余组件重名时跳过并提示。</summary>
+    /// <summary>注册组件命令：已装 → 加载 dll 注册真实命令（--help 直接显示）；未装 → 简单占位（提示安装）。
+    /// 类型收敛：ui/cmd 组件注册命令；tool（LLM 工具，serve 加载）不注册。
+    /// 重写规则：仅官方组件（serve/tui/gui）可覆盖重名命令（后注册覆盖先注册）；其余组件重名时跳过并提示。</summary>
     private static void RegisterComponentCommands(RootCommand root)
     {
         foreach (var e in ComponentManager.Index)
@@ -73,18 +73,17 @@ public static class Program
             var name = e.Alias;
             if (ComponentManager.IsInstalled(name))
             {
-                // web（资源）/ tool（LLM 工具，serve 加载）类组件不注册命令
-                if (ComponentManager.GetManifest(name) is { Type: "web" or "tool" }) continue;
+                // tool（LLM 工具，serve 加载）类组件不注册命令
+                if (ComponentManager.GetManifest(name) is { Type: "tool" }) continue;
                 if (ComponentManager.TryLoadComponent(name, out var asm))
                 {
                     ComponentManager.InjectApp(asm, App);
-                    var canOverride = ComponentManager.GetManifest(name) is { Type: "serve" or "tui" or "gui" };
+                    var canOverride = name is "serve" or "tui" or "gui";
                     foreach (var c in ComponentManager.ReadCommands(asm)) AddComponentCommand(root, c, canOverride);
                     continue;
                 }
             }
-            // 未装 / 加载失败：占位（web 类或重名时跳过，避免命令树冲突）
-            if (name == "web") continue;
+            // 未装 / 加载失败：占位（重名时跳过，避免命令树冲突）
             if (root.Subcommands.Any(c => c.Name == name)) continue;
             root.Add(NotInstalledCommand(name));
         }

@@ -1,6 +1,7 @@
 [
   { "alias": "serve", "repo": "WTangent.Server" },
   { "alias": "tui", "repo": "WTangent.Tui" },
+  { "alias": "client", "repo": "WTangent.Client" },
   { "alias": "gui", "repo": "WTangent.Gui" },
   { "alias": "git", "repo": "WTangent.GitCmd" }
 ]

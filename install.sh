@@ -76,4 +76,9 @@ else
 fi
 
 "$DEST" --help 2>&1 | head -3
+
+# 自动安装官方组件（serve/tui/client/git；失败不阻断，可手动 wtangent install）
+echo "[install] 自动安装官方组件（serve/tui/client/git）…"
+"$DEST" install >/dev/null 2>&1 || echo "[install] 官方组件安装失败（可手动 wtangent install）"
+
 echo "[install] 完成：$DEST（当前会话：export PATH=\"$BINDIR:\$PATH\"）"

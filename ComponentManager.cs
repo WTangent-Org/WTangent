@@ -22,10 +22,11 @@ public static class ComponentManager
     /// <summary>离线兜底索引（仅首次无缓存时用；与 components.json 同序 = 桌面优先级）</summary>
     private static readonly IndexEntry[] FallbackIndex =
     [
-        new("gui",   "WtAgent.Gui"),
-        new("tui",   "WtAgent.Client"),
-        new("serve", "WtAgent.Server"),
-        new("web",   "WtAgent.Web"),
+        new("gui",    "WTangent.Gui"),
+        new("tui",    "WTangent.Tui"),
+        new("client", "WTangent.Client"),
+        new("serve",  "WTangent.Server"),
+        new("git",    "WTangent.GitCmd"),
     ];
 
     /// <summary>组件安装目录（%APPDATA%\agent\components）</summary>
@@ -73,16 +74,14 @@ public static class ComponentManager
     /// <summary>启动静默刷新索引（不查版本——更新由 agent upgrade 显式承担）</summary>
     public static void RefreshIndexSilently() => UpdateIndex(quiet: true);
 
-    /// <summary>组件是否已装（代码组件看入口 dll，web 类看 .installed 标记）</summary>
+    /// <summary>组件是否已装（看入口 dll；manifest 缺失时回退 .installed 标记）</summary>
     public static bool IsInstalled(string name)
     {
         var dir = ComponentDir(name);
         if (!Directory.Exists(dir)) return false;
         var manifest = GetManifest(name);
         if (manifest is null) return File.Exists(Path.Combine(dir, ".installed"));
-        return manifest.Type == "web"
-            ? File.Exists(Path.Combine(dir, ".installed"))
-            : File.Exists(Path.Combine(dir, manifest.Asset + ".dll"));
+        return File.Exists(Path.Combine(dir, manifest.Asset + ".dll"));
     }
 
     /// <summary>组件表查找（别名）；未知名字打印提示并返回 false</summary>
@@ -255,7 +254,7 @@ public static class ComponentManager
         var repo = entry.Repo;
         var manifest = GetManifest(name);
         if (manifest is null) return 1;
-        var (_, type, asset) = manifest;
+        var (_, _, asset) = manifest;
         var dir = ComponentDir(name);
         var marker = IsInstalled(name);
         if (!force && marker)
@@ -276,27 +275,15 @@ public static class ComponentManager
             Directory.CreateDirectory(tmp);
             ZipFile.ExtractToDirectory(zip, tmp);
             File.Delete(zip);
-            if (type != "web")
+            // 代码组件 → components\{name}（ui/cmd/tool 统一；serve 包内 web/ 资源 → %APPDATA%\agent\web）
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            Directory.Move(tmp, dir);
+            var webSrc = Path.Combine(dir, "web");
+            if (Directory.Exists(webSrc))
             {
-                // 代码组件 → components\{name}
-                if (Directory.Exists(dir)) Directory.Delete(dir, true);
-                Directory.Move(tmp, dir);
-                var webSrc = Path.Combine(dir, "web");
-                if (Directory.Exists(webSrc))
-                {
-                    var webDest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "agent", "web");
-                    if (Directory.Exists(webDest)) Directory.Delete(webDest, true);
-                    Directory.Move(webSrc, webDest);
-                }
-            }
-            else
-            {
-                // web 类组件 → %APPDATA%\agent\web
                 var webDest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "agent", "web");
                 if (Directory.Exists(webDest)) Directory.Delete(webDest, true);
-                Directory.Move(tmp, webDest);
-                Directory.CreateDirectory(dir);
-                File.WriteAllText(Path.Combine(dir, ".installed"), tag);
+                Directory.Move(webSrc, webDest);
             }
         }
         catch (Exception e)
