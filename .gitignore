@@ -62,3 +62,6 @@ nunit-*.xml
 
 # 编译期引用组件源码（clone 到此，不入库）
 deps/
+
+# 本地 NuGet 源配置（D:\nuget-local）
+nuget.config

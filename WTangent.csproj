@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <PackageReference Include="System.CommandLine" Version="2.0.10"/>
+    <!-- 运行时契约（Application/ITool 等）：宿主实现并注入组件 -->
+    <PackageReference Include="WTangent.Components" Version="0.0.2" PrivateAssets="all"/>
   </ItemGroup>
 
   <!-- 编译期引用组件源码（clone 到此，不入库）：deps 只作为 ProjectReference，不参与本项目源码编译；

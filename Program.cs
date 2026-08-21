@@ -2,21 +2,30 @@ using System.CommandLine;
 using System.Reflection;
 using System.Runtime.Loader;
 using WTangent.Commands;
+using WTangent.Core;
+using WTangent.Host;
 
 namespace WTangent;
 
-/// <summary>agent 启动器（空壳）：self-contained 带 .NET 运行时；组件为 framework-dependent dll，
+/// <summary>wtangent 启动器（空壳）：self-contained 带 .NET 运行时；组件为 framework-dependent dll，
 /// 下载解压后由本进程加载（共享运行时）。组件元数据 = GitHub components.json 索引（apt 模式），
-/// 组件暴露 Command 列表注册到空壳命令树；入口约定：public static class Entry（Commands + Default）。</summary>
+/// 组件暴露 Command 列表注册到空壳命令树；入口约定：public static class Entry（Commands + Default + App）。
+/// 宿主实现 Application（Logger/Events/Config/Store/Remote/GuiHost/Services）并注入每个组件（Entry.App）。</summary>
 public static class Program
 {
+    /// <summary>组件运行时上下文（宿主实现；注入已加载组件的 Entry.App）</summary>
+    public static Application App { get; private set; } = null!;
+
     public static int Main(string[] args)
     {
         // 组件依赖解析：从已装组件目录补依赖（组件 dll 的 NuGet 依赖如 Terminal.Gui 等）
         AssemblyLoadContext.Default.Resolving += ComponentManager.ResolveComponentDependency;
 
-        // 静默刷新组件索引（快速超时，离线静默走缓存；更新提示由 agent upgrade 承担）
+        // 静默刷新组件索引（快速超时，离线静默走缓存；更新提示由 wtangent upgrade 承担）
         ComponentManager.RefreshIndexSilently();
+
+        App = BuildApp();
+        App.Events.Publish("app.startup", null);
 
         var root = new RootCommand("wtangent - 启动器（install/remove/upgrade/update；组件命令已注册）")
         {
@@ -30,7 +39,28 @@ public static class Program
 
         // 顶级（无子命令）→ 已装且带 Default 的组件（headless 顺序）
         root.SetAction(_ => RunTopLevel());
-        return root.Parse(args).Invoke();
+        var rc = root.Parse(args).Invoke();
+        App.Events.Publish("app.shutdown", null);
+        return rc;
+    }
+
+    /// <summary>组装宿主 Application：所有契约由主仓实现，组件经 Entry.App 使用</summary>
+    private static Application BuildApp()
+    {
+        var logger = new HostLogger();
+        var events = new HostEventBus(logger);
+        var store = new HostStore();
+        return new Application
+        {
+            Logger = logger,
+            Events = events,
+            Config = new HostConfig(events),
+            Store = store,
+            Remote = new RemoteClient(store),
+            GuiHost = new GuiHost(),
+            Http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) },
+            Services = new ServiceRegistry(),
+        };
     }
 
     /// <summary>注册组件命令：已装 → 加载 dll 注册真实命令（--help 直接显示）；未装 → 简单占位（提示安装）；
@@ -47,6 +77,7 @@ public static class Program
                 if (ComponentManager.GetManifest(name) is { Type: "web" or "tool" }) continue;
                 if (ComponentManager.TryLoadComponent(name, out var asm))
                 {
+                    ComponentManager.InjectApp(asm, App);
                     var canOverride = ComponentManager.GetManifest(name) is { Type: "serve" or "tui" or "gui" };
                     foreach (var c in ComponentManager.ReadCommands(asm)) AddComponentCommand(root, c, canOverride);
                     continue;

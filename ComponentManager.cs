@@ -119,8 +119,21 @@ public static class ComponentManager
         catch (Exception e)
         {
             asm = null!;
-            Console.Error.WriteLine($"[agent] 加载 {name} 组件失败：{e.Message}");
+            Console.Error.WriteLine($"[wtangent] 加载 {name} 组件失败：{e.Message}");
             return false;
+        }
+    }
+
+    /// <summary>注入运行时上下文（Entry.App，宿主实现）：组件经 Entry.App 使用 Logger/Events/Config/Store/Remote/Services</summary>
+    public static void InjectApp(Assembly asm, WTangent.Core.Application app)
+    {
+        try
+        {
+            FindEntryType(asm)?.GetProperty("App", BindingFlags.Public | BindingFlags.Static)?.SetValue(null, app);
+        }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine($"[wtangent] 注入运行时上下文失败：{e.Message}");
         }
     }
 
