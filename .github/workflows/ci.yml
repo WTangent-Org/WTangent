@@ -29,4 +29,4 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: dotnet build（Release）
-        run: dotnet build Agent.csproj -c Release --nologo
+        run: dotnet build WTangent.csproj -c Release --nologo

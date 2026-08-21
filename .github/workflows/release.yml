@@ -105,7 +105,7 @@ jobs:
             [osx-arm64]=wtangent-osx-arm64
           )
           for rid in "${!rids[@]}"; do
-            dotnet publish Agent.csproj -c Release -r $rid --self-contained \
+            dotnet publish WTangent.csproj -c Release -r $rid --self-contained \
               -p:PublishSingleFile=true -p:PublishTrimmed=false -o out/$rid
             find out/$rid -maxdepth 1 -type f \( -name "wtangent" -o -name "wtangent.exe" \) -exec mv {} out/${rids[$rid]} \;
           done

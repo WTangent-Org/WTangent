@@ -6,11 +6,11 @@
 
   <!-- 编译期引用组件源码（clone 到此，不入库）：deps 只作为 ProjectReference，不参与本项目源码编译；
        ExcludeAssets=runtime + Private=false：组件 dll 绝不复制到空壳输出（运行时从 components 加载下载的 dll） -->
-  <ItemGroup Condition="Exists('deps/WTangent.Server/WtAgent.Server.csproj')">
-    <ProjectReference Include="deps/WTangent.Server/WtAgent.Server.csproj" ExcludeAssets="runtime" Private="false"/>
+  <ItemGroup Condition="Exists('deps/WTangent.Server/WTangent.Server.csproj')">
+    <ProjectReference Include="deps/WTangent.Server/WTangent.Server.csproj" ExcludeAssets="runtime" Private="false"/>
   </ItemGroup>
-  <ItemGroup Condition="Exists('deps/WTangent.Tui/WtAgent.Client.csproj')">
-    <ProjectReference Include="deps/WTangent.Tui/WtAgent.Client.csproj" ExcludeAssets="runtime" Private="false"/>
+  <ItemGroup Condition="Exists('deps/WTangent.Tui/WTangent.Tui.csproj')">
+    <ProjectReference Include="deps/WTangent.Tui/WTangent.Tui.csproj" ExcludeAssets="runtime" Private="false"/>
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="deps/**"/>
