@@ -1,12 +1,7 @@
 name: release
 
-# Agent（空壳启动器）发布：release-please 管版本 → 合并后构建 agent 七平台 → 上传 release
-# install.ps1/install.sh 从这里下载 wtagent-win-x64.exe 等资产
-on:
-  push:
-    branches: [main]
-name: release
-
+# wtangent（空壳启动器）发布：release-please 管版本 → 合并后构建 wtangent 七平台 → 上传 release
+# install.ps1/install.sh 从这里下载 wtangent-win-x64.exe 等资产
 on:
   push:
     branches: [main]
