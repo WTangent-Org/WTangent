@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/WTangent-Org/WTangent/compare/v0.7.0...v0.7.1) (2026-08-22)
+
+
+### 🐛 修复
+
+* release.yml deps 检出指向 WTangent-Org 新仓库 ([57c1972](https://github.com/WTangent-Org/WTangent/commit/57c197220a0dc607827285a0c21c8a456838b7d2))
+
 ## [0.7.0](https://github.com/WTangent-Org/WTangent/compare/v0.6.0...v0.7.0) (2026-08-22)
 
 
