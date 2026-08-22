@@ -75,13 +75,13 @@ jobs:
       # 编译期引用组件源码（ExcludeAssets=runtime，dll 不随空壳发布）
       - uses: actions/checkout@v4
         with:
-          repository: wtommy932/Agent.Server
-          path: deps/Agent.Server
+          repository: WTangent-Org/WTangent.Server
+          path: deps/WTangent.Server
 
       - uses: actions/checkout@v4
         with:
-          repository: wtommy932/Agent.Client
-          path: deps/Agent.Client
+          repository: WTangent-Org/WTangent.Tui
+          path: deps/WTangent.Tui
 
       - uses: actions/setup-dotnet@v4
         with:
