@@ -63,8 +63,9 @@ public static class Program
         };
     }
 
-    /// <summary>注册组件命令：已装 → 加载 dll 注册真实命令（--help 直接显示）；未装 → 简单占位（提示安装）。
-    /// 类型收敛：ui/cmd 组件注册命令；tool（LLM 工具，serve 加载）不注册。
+    /// <summary>注册组件命令：已装 → 加载 dll → 找 IEntry → StartAsync(App) → 注册 Commands（--help 直接显示）；
+    /// 未装/加载失败 → 简单占位（提示安装）。
+    /// 能力由组件自己声明：Commands 非空即注册；tool 类组件（只给 Tools）自然无命令可注册。
     /// 重写规则：仅官方组件（serve/tui/gui）可覆盖重名命令（后注册覆盖先注册）；其余组件重名时跳过并提示。</summary>
     private static void RegisterComponentCommands(RootCommand root)
     {
@@ -73,13 +74,11 @@ public static class Program
             var name = e.Alias;
             if (ComponentManager.IsInstalled(name))
             {
-                // tool（LLM 工具，serve 加载）类组件不注册命令
-                if (ComponentManager.GetManifest(name) is { Type: "tool" }) continue;
-                if (ComponentManager.TryLoadComponent(name, out var asm))
+                var entry = ComponentManager.LoadEntry(name, App);
+                if (entry is not null)
                 {
-                    ComponentManager.InjectApp(asm, App);
                     var canOverride = name is "serve" or "tui" or "gui";
-                    foreach (var c in ComponentManager.ReadCommands(asm)) AddComponentCommand(root, c, canOverride);
+                    foreach (var c in entry.Commands) AddComponentCommand(root, c, canOverride);
                     continue;
                 }
             }
@@ -125,9 +124,10 @@ public static class Program
         var ordered = HeadlessComponent() == "gui" ? names : names.Reverse();
         foreach (var name in ordered)
         {
-            if (!ComponentManager.IsInstalled(name) || !ComponentManager.TryLoadComponent(name, out var asm)) continue;
-            if (!ComponentManager.HasDefault(asm)) continue;
-            return ComponentManager.RunDefault(name, []);
+            if (!ComponentManager.IsInstalled(name)) continue;
+            var entry = ComponentManager.LoadEntry(name, App);
+            if (entry?.Default is null) continue;
+            return ComponentManager.RunDefault(name, App, []);
         }
         Console.WriteLine("[wtangent] 未安装客户端组件。");
         Console.WriteLine($"[wtangent] 请先运行：wtangent install {ComponentManager.Index.FirstOrDefault(e => e.Alias is "tui" or "gui")?.Alias ?? "tui"}");

@@ -10,8 +10,9 @@ namespace WTangent;
 /// <summary>组件索引条目（components.json：只存 别名→仓库 映射，winget 式；GitHub 维护，空壳拉取缓存）</summary>
 public sealed record IndexEntry(string Alias, string Repo);
 
-/// <summary>组件入口文件（agent-component.json：组件仓库根自声明——类型/资产名等元数据）</summary>
-public sealed record ManifestEntry(string Name, string Type, string Asset);
+/// <summary>组件入口文件（agent-component.json：组件仓库根自声明——资产名等元数据；
+/// 类型已废弃：行为由 IEntry 能力决定，不再按 type 分流）</summary>
+public sealed record ManifestEntry(string Name, string Asset);
 
 /// <summary>组件管理：索引（apt 模式）+ 安装/卸载/升级 + dll 加载 + Entry 反射推导 + 依赖解析</summary>
 public static class ComponentManager
@@ -123,16 +124,26 @@ public static class ComponentManager
         }
     }
 
-    /// <summary>注入运行时上下文（Entry.App，宿主实现）：组件经 Entry.App 使用 Logger/Events/Config/Store/Remote/Services</summary>
-    public static void InjectApp(Assembly asm, WTangent.Core.Application app)
+    /// <summary>加载组件入口（找 IEntry 实现 → 实例化 → StartAsync 注入 App）；失败提示并返回 null</summary>
+    public static WTangent.Core.IEntry? LoadEntry(string name, WTangent.Core.Application app)
     {
+        if (!TryLoadComponent(name, out var asm)) return null;
+        var entryType = FindEntryType(asm);
+        if (entryType is null)
+        {
+            Console.Error.WriteLine($"[wtangent] 组件缺少入口（实现 IEntry 的类型）：{asm.GetName().Name}");
+            return null;
+        }
         try
         {
-            FindEntryType(asm)?.GetProperty("App", BindingFlags.Public | BindingFlags.Static)?.SetValue(null, app);
+            var entry = (WTangent.Core.IEntry)Activator.CreateInstance(entryType)!;
+            entry.StartAsync(app).GetAwaiter().GetResult();
+            return entry;
         }
         catch (Exception e)
         {
-            Console.Error.WriteLine($"[wtangent] 注入运行时上下文失败：{e.Message}");
+            Console.Error.WriteLine($"[wtangent] 组件 {name} 入口启动失败：{e.Message}");
+            return null;
         }
     }
 
@@ -169,12 +180,13 @@ public static class ComponentManager
 
     private static string ManifestFile(string name) => Path.Combine(ComponentDir(name), "agent-component.json");
 
-    /// <summary>反射推导组件入口类型（约定：public static class Entry）；依赖缺失时容错返回 null</summary>
+    /// <summary>反射推导组件入口类型（约定：实现 IEntry 的 public 非抽象类）；依赖缺失时容错返回 null</summary>
     public static Type? FindEntryType(Assembly asm)
     {
         try
         {
-            return asm.GetTypes().FirstOrDefault(t => t is { Name: "Entry", IsPublic: true, IsAbstract: true, IsSealed: true });
+            return asm.GetTypes().FirstOrDefault(t => t is { IsPublic: true, IsAbstract: false }
+                && typeof(WTangent.Core.IEntry).IsAssignableFrom(t));
         }
         catch (ReflectionTypeLoadException)
         {
@@ -182,34 +194,8 @@ public static class ComponentManager
         }
     }
 
-    /// <summary>反射推导：组件是否有顶级行为（Default 属性非 null）</summary>
-    public static bool HasDefault(Assembly asm) =>
-        FindEntryType(asm)?.GetProperty("Default", BindingFlags.Public | BindingFlags.Static) is not null;
-
-    /// <summary>反射读组件 Entry.Commands（入口约定：Entry 类 + Commands 属性，签名稳定）</summary>
-    public static IEnumerable<Command> ReadCommands(Assembly asm)
-    {
-        var entry = FindEntryType(asm);
-        if (entry is null)
-        {
-            Console.Error.WriteLine($"[agent] 组件缺少入口类型（public static class Entry）：{asm.GetName().Name}");
-            return [];
-        }
-        try
-        {
-            var prop = entry.GetProperty("Commands", BindingFlags.Public | BindingFlags.Static)
-                ?? throw new InvalidOperationException("组件入口 Commands 属性缺失");
-            return (prop.GetValue(null) as IEnumerable<Command>) ?? [];
-        }
-        catch (Exception e)
-        {
-            Console.Error.WriteLine($"[agent] 读取组件命令失败：{e.Message}");
-            return [];
-        }
-    }
-
-    /// <summary>执行组件顶级行为（Default）</summary>
-    public static int RunDefault(string component, string[] passthrough)
+    /// <summary>执行组件顶级行为（IEntry.Default）</summary>
+    public static int RunDefault(string component, WTangent.Core.Application app, string[] passthrough)
     {
         if (!IsInstalled(component))
         {
@@ -217,22 +203,26 @@ public static class ComponentManager
             Console.WriteLine($"[wtangent] 请先运行：wtangent install {component}");
             return 1;
         }
-        if (!TryLoadComponent(component, out var asm)) return 1;
+        var entry = LoadEntry(component, app);
+        if (entry is null) return 1;
+        if (entry.Default is null)
+        {
+            Console.Error.WriteLine($"[wtangent] 组件 {component} 无顶级行为（Default）");
+            return 1;
+        }
         try
         {
-            var entry = FindEntryType(asm)
-                ?? throw new InvalidOperationException("组件入口类型缺失");
-            var prop = entry.GetProperty("Default", BindingFlags.Public | BindingFlags.Static)
-                ?? throw new InvalidOperationException("组件入口 Default 属性缺失");
-            var fn = prop.GetValue(null) as Func<string[], int>;
-            return fn?.Invoke(passthrough) ?? 0;
+            return entry.Default(passthrough);
         }
         catch (Exception e)
         {
-            Console.Error.WriteLine($"[agent] 执行 {component} 组件失败：{e.Message}");
+            Console.Error.WriteLine($"[wtangent] 执行 {component} 组件失败：{e.Message}");
             return 1;
         }
     }
+
+    /// <summary>读取组件命令（IEntry.Commands）</summary>
+    public static IEnumerable<Command> ReadCommands(WTangent.Core.IEntry entry) => entry.Commands;
 
     /// <summary>安装组件：拉入口文件（agent-component.json）→ 下载 zip → 解压（web 类进 %APPDATA%\agent\web，
     /// 其余进 components\{name}，含 web/ 处理）；装后记录版本</summary>
@@ -254,7 +244,7 @@ public static class ComponentManager
         var repo = entry.Repo;
         var manifest = GetManifest(name);
         if (manifest is null) return 1;
-        var (_, _, asset) = manifest;
+        var asset = manifest.Asset;
         var dir = ComponentDir(name);
         var marker = IsInstalled(name);
         if (!force && marker)
