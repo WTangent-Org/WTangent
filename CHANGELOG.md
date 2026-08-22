@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.7.0](https://github.com/WTangent-Org/WTangent/compare/v0.6.0...v0.7.0) (2026-08-22)
+
+
+### ✨ 新功能
+
+* Application 宿主实现并注入组件（轮 A） ([a644cb8](https://github.com/WTangent-Org/WTangent/commit/a644cb8ce968c13ba38e643ab9b965a9a4ff525e))
+* components.json 加 git 组件，移除 web 组件条目（web 命令归 tui） ([cfdf51e](https://github.com/WTangent-Org/WTangent/commit/cfdf51eadd9077549a0f731b1891fd3d8b7dc158))
+* IEntry 元组命令（父路径挂接）+ 三形态（cmd/sub/tool）+ 类型字段废弃 ([b6b4bd7](https://github.com/WTangent-Org/WTangent/commit/b6b4bd7e377138ad374c2a2d0bbecfe1345b0568))
+* IEntry 手写入口（0.0.3）——类型字段废弃，能力由 Entry 声明（Commands/Default/Tools + StartAsync 生命周期） ([2155c8a](https://github.com/WTangent-Org/WTangent/commit/2155c8a8b7b9dcda249dfc667599f72135e24062))
+* wtangent 空壳启动器 + Client 接收器（WTangent-Org 全新开始） ([5397d48](https://github.com/WTangent-Org/WTangent/commit/5397d48ac0ecec1dbc5a538199dfc9ebd32f6e2d))
+* 组件类型收敛 ui/cmd/tool + client 组件拆分（remote/run/web 归 client；tui 纯 UI；serve type=cmd；官方组件自动安装） ([fcfa0ef](https://github.com/WTangent-Org/WTangent/commit/fcfa0efacdf7e200fef10e971068e85daf42daab))
+
+
+### 🐛 修复
+
+* ci deps checkout 指向新仓库 WTangent-Org（旧 wtommy932 地址已失效） ([4b13b39](https://github.com/WTangent-Org/WTangent/commit/4b13b396961612706cbcf8bb7fca21a594045533))
+* release.yml 重复头部 ([fe8c14f](https://github.com/WTangent-Org/WTangent/commit/fe8c14f084892cd3ba456802476b428a6fdba566))
+
+
+### 🧹 其他
+
+* csproj 文件名统一 WTangent.*（workflow/release-please/deps 引用同步） ([398f0a8](https://github.com/WTangent-Org/WTangent/commit/398f0a8d548dfb1c406646daae5884c077eee414))
+
 ## [0.6.0](https://github.com/wtommy932/WtAgent/compare/v0.5.0...v0.6.0) (2026-08-19)
 
 
