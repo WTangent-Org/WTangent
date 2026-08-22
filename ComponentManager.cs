@@ -136,7 +136,7 @@ public static class ComponentManager
         }
         try
         {
-            var entry = (WTangent.Core.IEntry)Activator.CreateInstance(entryType)!;
+            var entry = (WTangent.Core.IEntry)Activator.CreateInstance(entryType, app)!;   // 构造注入
             entry.StartAsync(app).GetAwaiter().GetResult();
             return entry;
         }
