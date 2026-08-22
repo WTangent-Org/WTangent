@@ -221,8 +221,8 @@ public static class ComponentManager
         }
     }
 
-    /// <summary>读取组件命令（IEntry.Commands）</summary>
-    public static IEnumerable<Command> ReadCommands(WTangent.Core.IEntry entry) => entry.Commands;
+    /// <summary>读取组件命令（IEntry.Commands：(命令, 父路径) 元组）</summary>
+    public static (Command Command, string? ParentPath)[] ReadCommands(WTangent.Core.IEntry entry) => entry.Commands;
 
     /// <summary>安装组件：拉入口文件（agent-component.json）→ 下载 zip → 解压（web 类进 %APPDATA%\agent\web，
     /// 其余进 components\{name}，含 web/ 处理）；装后记录版本</summary>

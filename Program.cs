@@ -65,7 +65,7 @@ public static class Program
 
     /// <summary>注册组件命令：已装 → 加载 dll → 找 IEntry → StartAsync(App) → 注册 Commands（--help 直接显示）；
     /// 未装/加载失败 → 简单占位（提示安装）。
-    /// 能力由组件自己声明：Commands 非空即注册；tool 类组件（只给 Tools）自然无命令可注册。
+    /// 能力由组件自己声明：Commands 非空即注册；sub（只订阅事件）/tool（只给 Tools）自然无命令可注册。
     /// 重写规则：仅官方组件（serve/tui/gui）可覆盖重名命令（后注册覆盖先注册）；其余组件重名时跳过并提示。</summary>
     private static void RegisterComponentCommands(RootCommand root)
     {
@@ -78,7 +78,8 @@ public static class Program
                 if (entry is not null)
                 {
                     var canOverride = name is "serve" or "tui" or "gui";
-                    foreach (var c in entry.Commands) AddComponentCommand(root, c, canOverride);
+                    foreach (var (cmd, parentPath) in entry.Commands)
+                        AddComponentCommand(root, cmd, parentPath, canOverride);
                     continue;
                 }
             }
@@ -88,10 +89,30 @@ public static class Program
         }
     }
 
-    /// <summary>注册组件命令：重名时仅白名单组件（serve/tui/gui）可覆盖（先移除旧命令再注册）；
+    /// <summary>注册组件命令：父路径非空 → 挂到该路径命令下（路径含根名 root，如 "root/remote"）；
+    /// 顶级/挂接重名时仅白名单组件（serve/tui/gui）可覆盖（先移除旧命令再注册）；
     /// 其余组件重名则跳过并提示。System.CommandLine 2.0 无公开移除 API，反射内部 _subcommands 列表。</summary>
-    private static void AddComponentCommand(RootCommand root, Command c, bool canOverride)
+    private static void AddComponentCommand(RootCommand root, Command c, string? parentPath, bool canOverride)
     {
+        if (parentPath is { Length: > 0 })
+        {
+            var parent = ResolvePath(root, parentPath);
+            if (parent is null)
+            {
+                Console.Error.WriteLine($"[wtangent] 跳过命令 {c.Name}：父路径 {parentPath} 不存在");
+                return;
+            }
+            var oldChild = parent.Subcommands.FirstOrDefault(x => x.Name == c.Name);
+            if (oldChild is null) { parent.Add(c); return; }
+            if (!canOverride)
+            {
+                Console.Error.WriteLine($"[wtangent] 跳过命令 {c.Name}：与 {parentPath} 下现有命令重名（仅 serve/tui/gui 组件可重写）");
+                return;
+            }
+            RemoveCommand(parent, oldChild);
+            parent.Add(c);
+            return;
+        }
         var old = root.Subcommands.FirstOrDefault(x => x.Name == c.Name);
         if (old is null) { root.Add(c); return; }
         if (!canOverride)
@@ -99,9 +120,31 @@ public static class Program
             Console.Error.WriteLine($"[agent] 跳过命令 {c.Name}：与现有命令重名（仅 serve/tui/gui 组件可重写）");
             return;
         }
-        var field = typeof(Command).GetField("_subcommands", BindingFlags.NonPublic | BindingFlags.Instance);
-        field?.GetValue(root)?.GetType().GetMethod("Remove")?.Invoke(field.GetValue(root), [old]);
+        RemoveCommand(root, old);
         root.Add(c);
+    }
+
+    /// <summary>按路径解析命令（路径含根名 root，如 "root/remote/user"；root 段跳过）</summary>
+    private static Command? ResolvePath(RootCommand root, string path)
+    {
+        var segs = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segs.Length == 0) return null;
+        var i = segs[0] == "root" ? 1 : 0;
+        Command cur = root;
+        for (; i < segs.Length; i++)
+        {
+            var next = cur.Subcommands.FirstOrDefault(x => x.Name == segs[i]);
+            if (next is null) return null;
+            cur = next;
+        }
+        return cur;
+    }
+
+    /// <summary>移除命令（System.CommandLine 2.0 无公开移除 API，反射内部 _subcommands 列表）</summary>
+    private static void RemoveCommand(Command parent, Command old)
+    {
+        var field = typeof(Command).GetField("_subcommands", BindingFlags.NonPublic | BindingFlags.Instance);
+        field?.GetValue(parent)?.GetType().GetMethod("Remove")?.Invoke(field.GetValue(parent), [old]);
     }
 
     /// <summary>未安装占位命令：执行时提示安装</summary>
