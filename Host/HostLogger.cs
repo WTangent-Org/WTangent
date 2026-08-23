@@ -5,7 +5,7 @@ namespace WTangent.Host;
 /// <summary>日志实现：控制台（带级别前缀）+ 追加写 %APPDATA%\agent\logs\wtangent.log</summary>
 public sealed class HostLogger : ILogger
 {
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private readonly string _logFile;
 
     public HostLogger()

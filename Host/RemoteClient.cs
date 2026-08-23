@@ -1,4 +1,4 @@
-using System.Text.Json;
+using System.Runtime.CompilerServices;
 using WTangent.Core;
 
 namespace WTangent.Host;
@@ -22,7 +22,8 @@ public sealed class RemoteClient(IAppStore store) : IRemoteClient
         return Task.FromResult<string?>($"远程客户端尚未实现（serve 会话协议后续随 Core 下沉提供）");
     }
 
-    public async IAsyncEnumerable<string> StreamAsync(string remote, string prompt, CancellationToken ct = default)
+    public async IAsyncEnumerable<string> StreamAsync(string remote, string prompt,
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
         yield return await AskAsync(remote, prompt, ct) ?? "";
     }

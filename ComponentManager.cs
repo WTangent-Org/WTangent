@@ -1,9 +1,11 @@
+using System.Collections.Concurrent;
 using System.CommandLine;
 using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Loader;
 using System.Text.Json;
+using WTangent.Core;
 
 namespace WTangent;
 
@@ -11,8 +13,9 @@ namespace WTangent;
 public sealed record IndexEntry(string Alias, string Repo);
 
 /// <summary>组件入口文件（agent-component.json：组件仓库根自声明——资产名等元数据；
-/// 类型已废弃：行为由 IEntry 能力决定，不再按 type 分流）</summary>
-public sealed record ManifestEntry(string Name, string Asset);
+/// 类型已废弃：行为由 IEntry 能力决定，不再按 type 分流；
+/// MinCore = 组件编译时引用的 Core 版本（生成器构建时自动写入），install/upgrade 时校验空壳内置 Core ≥ 它）</summary>
+public sealed record ManifestEntry(string Name, string Asset, string? MinCore = null);
 
 /// <summary>组件管理：索引（apt 模式）+ 安装/卸载/升级 + dll 加载 + Entry 反射推导 + 依赖解析</summary>
 public static class ComponentManager
@@ -49,6 +52,15 @@ public static class ComponentManager
     /// <summary>按需新实例（下载大文件等长超时场景；用后 Dispose，与 WtAgent.Core.Http 同构）</summary>
     private static HttpClient NewHttp(TimeSpan timeout) => new() { Timeout = timeout };
 
+    /// <summary>空壳内置 Core 版本（= 组件 manifest MinCore 的比较基准；
+    /// 单 ALC 统一，组件运行时用到的 Core 就是这份，与空壳版本同升同降）</summary>
+    public static readonly Version CoreVersion =
+        typeof(ILogger).Assembly.GetName().Version ?? new Version(0, 0);
+
+    /// <summary>已加载组件的依赖解析器（各组件 deps.json 驱动；TryLoadComponent 时注册，键 = 组件别名）</summary>
+    private static readonly ConcurrentDictionary<string, AssemblyDependencyResolver> Resolvers =
+        new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>当前索引（缓存 > 兜底）</summary>
     public static List<IndexEntry> Index => LoadIndex();
 
@@ -81,8 +93,7 @@ public static class ComponentManager
         var dir = ComponentDir(name);
         if (!Directory.Exists(dir)) return false;
         var manifest = GetManifest(name);
-        if (manifest is null) return File.Exists(Path.Combine(dir, ".installed"));
-        return File.Exists(Path.Combine(dir, manifest.Asset + ".dll"));
+        return File.Exists(manifest is null ? Path.Combine(dir, ".installed") : Path.Combine(dir, manifest.Asset + ".dll"));
     }
 
     /// <summary>组件表查找（别名）；未知名字打印提示并返回 false</summary>
@@ -114,6 +125,7 @@ public static class ComponentManager
         try
         {
             asm = Assembly.LoadFrom(dll);
+            Resolvers[name] = new AssemblyDependencyResolver(dll);   // 依赖解析走该组件自己的 deps.json
             return true;
         }
         catch (Exception e)
@@ -125,7 +137,7 @@ public static class ComponentManager
     }
 
     /// <summary>加载组件入口（找 IEntry 实现 → 实例化 → StartAsync 注入 App）；失败提示并返回 null</summary>
-    public static WTangent.Core.IEntry? LoadEntry(string name, WTangent.Core.Application app)
+    public static IEntry? LoadEntry(string name, Application app)
     {
         if (!TryLoadComponent(name, out var asm)) return null;
         var entryType = FindEntryType(asm);
@@ -136,7 +148,7 @@ public static class ComponentManager
         }
         try
         {
-            var entry = (WTangent.Core.IEntry)Activator.CreateInstance(entryType, app)!;   // 构造注入
+            var entry = (IEntry)Activator.CreateInstance(entryType, app)!;   // 构造注入
             entry.StartAsync(app).GetAwaiter().GetResult();
             return entry;
         }
@@ -186,7 +198,7 @@ public static class ComponentManager
         try
         {
             return asm.GetTypes().FirstOrDefault(t => t is { IsPublic: true, IsAbstract: false }
-                && typeof(WTangent.Core.IEntry).IsAssignableFrom(t));
+                && typeof(IEntry).IsAssignableFrom(t));
         }
         catch (ReflectionTypeLoadException)
         {
@@ -195,7 +207,7 @@ public static class ComponentManager
     }
 
     /// <summary>执行组件顶级行为（IEntry.Default）</summary>
-    public static int RunDefault(string component, WTangent.Core.Application app, string[] passthrough)
+    public static int RunDefault(string component, Application app, string[] passthrough)
     {
         if (!IsInstalled(component))
         {
@@ -222,7 +234,7 @@ public static class ComponentManager
     }
 
     /// <summary>读取组件命令（IEntry.Commands：(命令, 父路径) 元组）</summary>
-    public static (Command Command, string? ParentPath)[] ReadCommands(WTangent.Core.IEntry entry) => entry.Commands;
+    public static (Command Command, string? ParentPath)[] ReadCommands(IEntry entry) => entry.Commands;
 
     /// <summary>安装组件：拉入口文件（agent-component.json）→ 下载 zip → 解压（web 类进 %APPDATA%\agent\web，
     /// 其余进 components\{name}，含 web/ 处理）；装后记录版本</summary>
@@ -244,6 +256,14 @@ public static class ComponentManager
         var repo = entry.Repo;
         var manifest = GetManifest(name);
         if (manifest is null) return 1;
+        // Core 版本门禁：组件编译引用的 Core 高于空壳内置 Core 时拒装
+        // （单 ALC 静默绑旧 Core，调用新成员会运行时炸）
+        if (manifest.MinCore is { } minCore && Version.TryParse(minCore, out var need) && need > CoreVersion)
+        {
+            Console.Error.WriteLine($"[wtangent] {name} 需要 Core ≥ {minCore}（当前空壳内置 {CoreVersion}）");
+            Console.Error.WriteLine("[wtangent] 请重新运行安装脚本升级空壳（install.ps1 / install.sh）");
+            return 1;
+        }
         var asset = manifest.Asset;
         var dir = ComponentDir(name);
         var marker = IsInstalled(name);
@@ -345,9 +365,16 @@ public static class ComponentManager
         return rc;
     }
 
-    /// <summary>组件依赖解析：直接遍历已装组件目录（不走索引——Resolving 关键路径上禁 JSON/IO 递归）</summary>
+    /// <summary>组件依赖解析：优先各组件自己的 deps.json（AssemblyDependencyResolver，确定性、按组件隔离版本）；
+    /// 兜底按名直扫组件目录（无 deps.json 的旧包）。
+    /// Core / System.CommandLine 等空壳已加载的程序集由 ALC 按简单名统一，永远到不了这里。</summary>
     public static Assembly? ResolveComponentDependency(AssemblyLoadContext ctx, AssemblyName name)
     {
+        foreach (var resolver in Resolvers.Values)
+        {
+            var p = resolver.ResolveAssemblyToPath(name);
+            if (p is not null) return ctx.LoadFromAssemblyPath(p);
+        }
         if (!Directory.Exists(ComponentsDir)) return null;
         foreach (var dir in Directory.GetDirectories(ComponentsDir))
         {

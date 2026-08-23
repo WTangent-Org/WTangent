@@ -44,17 +44,21 @@ public static class Program
         return rc;
     }
 
-    /// <summary>组装宿主 Application：所有契约由主仓实现，组件经 Entry.App 使用</summary>
+    /// <summary>组装宿主 Application：所有契约由主仓实现，组件经 Entry.App 使用；
+    /// 同步注入 Core 全局门面 Log/Config（组件任意位置 Log.Info / Config.Get 直达，单 ALC 下静态唯一）</summary>
     private static Application BuildApp()
     {
         var logger = new HostLogger();
+        Log.Init(logger);
         var events = new HostEventBus(logger);
         var store = new HostStore();
+        var config = new HostConfig(events);
+        Config.Init(config);
         return new Application
         {
             Logger = logger,
             Events = events,
-            Config = new HostConfig(events),
+            Config = config,
             Store = store,
             Remote = new RemoteClient(store),
             GuiHost = new GuiHost(),
@@ -69,9 +73,8 @@ public static class Program
     /// 重写规则：仅官方组件（serve/tui/gui）可覆盖重名命令（后注册覆盖先注册）；其余组件重名时跳过并提示。</summary>
     private static void RegisterComponentCommands(RootCommand root)
     {
-        foreach (var e in ComponentManager.Index)
+        foreach (var name in ComponentManager.Index.Select(e => e.Alias))
         {
-            var name = e.Alias;
             if (ComponentManager.IsInstalled(name))
             {
                 var entry = ComponentManager.LoadEntry(name, App);
