@@ -3,7 +3,7 @@
   <ItemGroup>
     <PackageReference Include="System.CommandLine" Version="2.0.10"/>
     <!-- 运行时契约（Application/ITool 等）：宿主实现并注入组件 -->
-    <PackageReference Include="WTangent.Components" Version="0.0.9" PrivateAssets="all"/>
+    <PackageReference Include="WTangent.Components" Version="0.0.10" PrivateAssets="all"/>
   </ItemGroup>
 
   <!-- 空壳对组件只有运行时关系（Assembly.LoadFrom + IEntry 反射），不引用组件源码；
