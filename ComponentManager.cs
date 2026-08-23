@@ -62,8 +62,7 @@ public static class ComponentManager
         new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>当前索引（内存缓存 > 磁盘缓存 > 兜底；UpdateIndex 成功时同步刷新内存）</summary>
-    public static List<IndexEntry> Index => _index ??= LoadIndex();
-    private static List<IndexEntry>? _index;
+    public static List<IndexEntry> Index { get => field ??= LoadIndex(); private set => field = value; }
 
     /// <summary>刷新索引：拉 GitHub components.json 写缓存；quiet 时失败静默</summary>
     public static bool UpdateIndex(bool quiet = false)
@@ -75,7 +74,7 @@ public static class ComponentManager
             if (list is not { Count: > 0 }) return false;
             Directory.CreateDirectory(Path.GetDirectoryName(IndexFile)!);
             File.WriteAllText(IndexFile, json);
-            _index = list;   // 同步内存缓存（否则本次进程还拿着旧索引）
+            Index = list;   // 同步内存缓存（否则本次进程还拿着旧索引）
             return true;
         }
         catch (Exception e)
