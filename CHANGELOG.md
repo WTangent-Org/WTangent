@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.8.0](https://github.com/WTangent-Org/WTangent/compare/v0.7.1...v0.8.0) (2026-08-23)
+
+
+### ✨ 新功能
+
+* minCore 版本门禁 + 组件依赖解析改 AssemblyDependencyResolver（deps.json 驱动）+ Log/Config 门面注入；空壳不再编译期引用组件源码 ([1d52cc4](https://github.com/WTangent-Org/WTangent/commit/1d52cc4fda844b7cf53254934af031a14b3c0aa5))
+* 最终特性集 [AgentEntry(id,name,isAsync)]/[EntryStart]/[EntryStop]/[AgentCommand(parent)]/[AgentTool] ([6599f32](https://github.com/WTangent-Org/WTangent/commit/6599f32b5de882803dccbf688d72be545a6fa140))
+* 构造注入 App（无 null!）+ Current 静态桥（PCL-CE 式）；钩子实例方法，纯业务 ([0bdc44e](https://github.com/WTangent-Org/WTangent/commit/0bdc44e946510d628320ed4d6f8511ab2925756b))
+
+
+### 🐛 修复
+
+* 已装状态与远程索引解耦，安装元数据落地本地 ([b890b47](https://github.com/WTangent-Org/WTangent/commit/b890b47a2410bb1d3e9d1c5222a2886ad4835c10))
+
+
+### 🧹 其他
+
+* BuildApp 赋值 Obsolete 兼容通道（pragma CS0618，为 Core ≥0.0.10 预备） ([becbddb](https://github.com/WTangent-Org/WTangent/commit/becbddbe755c9a8906ad1eac1fd2365c4e875636))
+* Components 升 0.0.10（Application 移除 Logger/Config，统一走门面） ([b020eaf](https://github.com/WTangent-Org/WTangent/commit/b020eaf86ae93cc5d7d5c7b9279272151bc2c1d7))
+* 同步 Application 移除 Logger/Config（门面已注入，删除赋值与 pragma） ([52c7cdb](https://github.com/WTangent-Org/WTangent/commit/52c7cdb78699ebe1dfa8c9362c36e804caeb2aa7))
+
 ## [0.7.1](https://github.com/WTangent-Org/WTangent/compare/v0.7.0...v0.7.1) (2026-08-22)
 
 
