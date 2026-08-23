@@ -35,7 +35,9 @@ public static class Program
         root.Add(new RemoveCommand());
         root.Add(new UpgradeCommand());
         root.Add(new UpdateCommand());
-        RegisterComponentCommands(root);
+        // 管理命令不加载组件：组件 dll 一经加载即被本进程锁定，Windows 上 install --force/upgrade/remove 会删不动目录（自锁）
+        if (args is not ["install" or "remove" or "upgrade" or "update", ..])
+            RegisterComponentCommands(root);
 
         // 顶级（无子命令）→ 已装且带 Default 的组件（headless 顺序）
         root.SetAction(_ => RunTopLevel());
@@ -65,28 +67,28 @@ public static class Program
         };
     }
 
-    /// <summary>注册组件命令：已装 → 加载 dll → 找 IEntry → StartAsync(App) → 注册 Commands（--help 直接显示）；
-    /// 未装/加载失败 → 简单占位（提示安装）。
+    /// <summary>注册组件命令：已装（纯本地扫描，按索引优先级排序）→ 加载 dll → 找 IEntry → StartAsync(App) → 注册 Commands（--help 直接显示）；
+    /// 索引里已知但未装/加载失败 → 简单占位（提示安装）。索引只是远程清单，不代表本地装了什么。
     /// 能力由组件自己声明：Commands 非空即注册；sub（只订阅事件）/tool（只给 Tools）自然无命令可注册。
     /// 重写规则：仅官方组件（serve/tui/gui）可覆盖重名命令（后注册覆盖先注册）；其余组件重名时跳过并提示。</summary>
     private static void RegisterComponentCommands(RootCommand root)
     {
-        foreach (var name in ComponentManager.Index.Select(e => e.Alias))
+        var loaded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in ComponentManager.InstalledComponents().OrderBy(ComponentManager.PriorityOf))
         {
-            if (ComponentManager.IsInstalled(name))
-            {
-                var entry = ComponentManager.LoadEntry(name, App);
-                if (entry is not null)
-                {
-                    var canOverride = name is "serve" or "tui" or "gui";
-                    foreach (var (cmd, parentPath) in entry.Commands)
-                        AddComponentCommand(root, cmd, parentPath, canOverride);
-                    continue;
-                }
-            }
-            // 未装 / 加载失败：占位（重名时跳过，避免命令树冲突）
-            if (root.Subcommands.Any(c => c.Name == name)) continue;
-            root.Add(NotInstalledCommand(name));
+            var entry = ComponentManager.LoadEntry(name, App);
+            if (entry is null) continue;   // 加载失败 → 落占位
+            var canOverride = name is "serve" or "tui" or "gui";
+            foreach (var (cmd, parentPath) in entry.Commands)
+                AddComponentCommand(root, cmd, parentPath, canOverride);
+            loaded.Add(name);
+        }
+        // 未装 / 加载失败：占位（重名时跳过，避免命令树冲突）
+        foreach (var alias in ComponentManager.Index.Select(e => e.Alias))
+        {
+            if (loaded.Contains(alias)) continue;
+            if (root.Subcommands.Any(c => c.Name == alias)) continue;
+            root.Add(NotInstalledCommand(alias));
         }
     }
 
@@ -161,14 +163,16 @@ public static class Program
         return c;
     }
 
-    /// <summary>顶级 wtangent：索引顺序 = 桌面优先级（headless 反转），取第一个已装且有 Default 的组件执行</summary>
+    /// <summary>顶级 wtangent：已装集合纯本地扫描；索引只定优先级（顺序 = 桌面优先，headless 反转），
+    /// 取第一个有 Default 的组件执行</summary>
     private static int RunTopLevel()
     {
-        var names = ComponentManager.Index.Select(e => e.Alias).ToArray();
-        var ordered = HeadlessComponent() == "gui" ? names : names.Reverse();
+        var installed = ComponentManager.InstalledComponents();
+        var ordered = HeadlessComponent() == "gui"
+            ? installed.OrderBy(ComponentManager.PriorityOf)
+            : installed.OrderByDescending(ComponentManager.PriorityOf);
         foreach (var name in ordered)
         {
-            if (!ComponentManager.IsInstalled(name)) continue;
             var entry = ComponentManager.LoadEntry(name, App);
             if (entry?.Default is null) continue;
             return ComponentManager.RunDefault(name, App, []);

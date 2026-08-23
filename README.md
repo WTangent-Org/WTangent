@@ -22,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/wtommy932/WtAgent/main/install.sh |
 
 - `wtagent install serve` → 装 serve 组件（命令自动注册，wsl 式扩展）
 - `agent` → 顶级启动客户端（有桌面选 GUI，无桌面选 TUI）
-- 组件元数据来自 GitHub `components.json` 索引（apt 模式），`wtagent update` 刷新
+- 可装组件清单来自 GitHub `components.json` 索引（apt 模式），`wtagent update` 刷新；已装状态纯本地（`components\` 目录扫描 + 安装时写入的 `.installed` 元数据：来源仓库+版本），不依赖索引
 
 ## 架构
 

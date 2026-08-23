@@ -61,8 +61,13 @@ public static class ComponentManager
     private static readonly ConcurrentDictionary<string, AssemblyDependencyResolver> Resolvers =
         new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>当前索引（内存缓存 > 磁盘缓存 > 兜底；UpdateIndex 成功时同步刷新内存）</summary>
-    public static List<IndexEntry> Index { get => field ??= LoadIndex(); private set => field = value; }
+    /// <summary>远程组件清单的本地缓存（内存 > 磁盘 > 兜底；UpdateIndex 成功时同步刷新内存）。
+    /// 只回答「registry 里有哪些组件可装 / 别名→仓库 / 展示优先级」，不代表本地装了什么——已装集合见 <see cref="InstalledComponents"/></summary>
+    public static List<IndexEntry> Index
+    {
+        get => field ??= LoadIndex();
+        private set;
+    }
 
     /// <summary>刷新索引：拉 GitHub components.json 写缓存；quiet 时失败静默</summary>
     public static bool UpdateIndex(bool quiet = false)
@@ -88,13 +93,46 @@ public static class ComponentManager
     /// <summary>启动静默刷新索引（不查版本——更新由 agent upgrade 显式承担）</summary>
     public static void RefreshIndexSilently() => UpdateIndex(quiet: true);
 
-    /// <summary>组件是否已装（看入口 dll；manifest 缺失时回退 .installed 标记）</summary>
+    /// <summary>组件是否已装（纯本地：看入口 dll；manifest 无本地缓存时回退 .installed 标记；不联网不查索引）</summary>
     public static bool IsInstalled(string name)
     {
         var dir = ComponentDir(name);
         if (!Directory.Exists(dir)) return false;
-        var manifest = GetManifest(name);
+        var manifest = ReadLocalManifest(name);
         return File.Exists(manifest is null ? Path.Combine(dir, ".installed") : Path.Combine(dir, manifest.Asset + ".dll"));
+    }
+
+    /// <summary>本地缓存的组件入口文件（不联网；无缓存/解析失败返回 null）</summary>
+    private static ManifestEntry? ReadLocalManifest(string name)
+    {
+        try
+        {
+            var f = ManifestFile(name);
+            return File.Exists(f) ? JsonSerializer.Deserialize<ManifestEntry>(File.ReadAllText(f), JsonOpts) : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>已装组件别名（纯本地：扫组件目录逐个 IsInstalled；与远程索引无关——索引不代表本地装了什么）</summary>
+    public static List<string> InstalledComponents()
+    {
+        if (!Directory.Exists(ComponentsDir)) return [];
+        var list = new List<string>();
+        foreach (var dir in Directory.GetDirectories(ComponentsDir))
+        {
+            if (Path.GetFileName(dir) is { } name && IsInstalled(name)) list.Add(name);
+        }
+        return list;
+    }
+
+    /// <summary>组件展示优先级（= 索引顺序；不在索引的排最后）——索引只定序，不定已装成员</summary>
+    public static int PriorityOf(string name)
+    {
+        var i = Index.FindIndex(e => e.Alias == name);
+        return i < 0 ? int.MaxValue : i;
     }
 
     /// <summary>组件表查找（别名）；未知名字打印提示并返回 false</summary>
@@ -163,14 +201,9 @@ public static class ComponentManager
     /// <summary>组件入口文件（本地缓存优先；缺失时从仓库拉取并缓存到 components\{name}\agent-component.json）</summary>
     public static ManifestEntry? GetManifest(string name)
     {
-        var local = ManifestFile(name);
-        try
-        {
-            if (File.Exists(local))
-                return JsonSerializer.Deserialize<ManifestEntry>(File.ReadAllText(local), JsonOpts);
-        }
-        catch { }
+        if (ReadLocalManifest(name) is { } cached) return cached;
         if (!TryComponent(name, out var entry)) return null;
+        var local = ManifestFile(name);
         var remote = $"https://raw.githubusercontent.com/WTangent-Org/{entry.Repo}/main/agent-component.json";
         try
         {
@@ -238,7 +271,7 @@ public static class ComponentManager
     public static (Command Command, string? ParentPath)[] ReadCommands(IEntry entry) => entry.Commands;
 
     /// <summary>安装组件：拉入口文件（agent-component.json）→ 下载 zip → 解压（web 类进 %APPDATA%\agent\web，
-    /// 其余进 components\{name}，含 web/ 处理）；装后记录版本</summary>
+    /// 其余进 components\{name}，含 web/ 处理）；装后写安装元数据（.installed：来源仓库 + 版本）</summary>
     public static int Install(string component, bool force)
     {
         var entry = Index.FirstOrDefault(e => e.Alias == component);
@@ -270,7 +303,7 @@ public static class ComponentManager
         var marker = IsInstalled(name);
         if (!force && marker)
         {
-            var v = ReadVersion(name);
+            var v = ReadMeta(name)?.Version;
             Console.WriteLine($"[wtangent] {name} 已安装：{dir}" + (v is null ? "" : $"（{v}）") + "；--force 重装，wtangent upgrade 更新");
             return 0;
         }
@@ -303,15 +336,14 @@ public static class ComponentManager
             try { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); } catch { }
             return 1;
         }
-        SaveVersion(name, tag);
+        SaveMeta(name, repo, tag);
         Console.WriteLine($"[agent] {name} {tag} 已安装：{dir}");
         return 0;
     }
 
-    /// <summary>卸载组件：删组件目录 + 版本记录</summary>
+    /// <summary>卸载组件：删组件目录（含安装元数据）；纯本地操作，不查远程索引</summary>
     public static int Remove(string component)
     {
-        if (!TryComponent(component, out _)) return 1;
         var dir = ComponentDir(component);
         if (!Directory.Exists(dir))
         {
@@ -331,12 +363,13 @@ public static class ComponentManager
         }
     }
 
-    /// <summary>检查并更新已装组件：agent upgrade [serve|tui|gui|web]（缺省全部已装组件）</summary>
+    /// <summary>检查并更新已装组件：agent upgrade [serve|tui|gui|web]（缺省 = 本地全部已装组件，纯本地扫描）。
+    /// 来源仓库优先读安装元数据（.installed），旧安装缺失时回退索引；都查不到则跳过</summary>
     public static int Upgrade(string? component)
     {
         var targets = component is null
-            ? Index.Select(e => e.Alias).Where(IsInstalled).ToList()
-            : TryComponent(component, out _) ? [component] : [];
+            ? InstalledComponents()
+            : IsInstalled(component) ? [component] : [];
         if (component is not null && !targets.Any())
         {
             Console.WriteLine($"[wtangent] {component} 未安装（wtangent install {component}）");
@@ -350,10 +383,17 @@ public static class ComponentManager
         var rc = 0;
         foreach (var name in targets)
         {
-            var (_, repo) = Index.First(x => x.Alias == name);
+            var meta = ReadMeta(name);
+            var repo = meta?.Repo ?? Index.FirstOrDefault(x => x.Alias == name)?.Repo;
+            if (repo is null)
+            {
+                Console.Error.WriteLine($"[agent] {name} 来源仓库未知（无安装元数据且索引里没有），跳过");
+                rc = 1;
+                continue;
+            }
             var tag = LatestTag(repo, name);
             if (tag is null) { rc = 1; continue; }
-            var local = ReadVersion(name);
+            var local = meta?.Version;
             if (local == tag)
             {
                 Console.WriteLine($"[agent] {name} 已是最新（{tag}）");
@@ -442,7 +482,32 @@ public static class ComponentManager
         return true;
     }
 
-    /// <summary>已装版本记录文件（%APPDATA%\agent\components\{component}\.version，内容为 release tag）</summary>
+    /// <summary>安装元数据（components\{component}\.installed，JSON：安装来源仓库 + 版本 tag；
+    /// 升级/卸载凭它走本地，不依赖远程索引。旧安装只有 .version：读取时回退，Repo 留空走索引）</summary>
+    private sealed record InstallMeta(string? Repo, string? Version);
+
+    private static string MetaFile(string component) => Path.Combine(ComponentsDir, component, ".installed");
+
+    private static InstallMeta? ReadMeta(string component)
+    {
+        try
+        {
+            var f = MetaFile(component);
+            if (File.Exists(f))
+                return JsonSerializer.Deserialize<InstallMeta>(File.ReadAllText(f), JsonOpts);
+            var v = ReadVersion(component);   // 旧安装只有 .version
+            return v is null ? null : new InstallMeta(null, v);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void SaveMeta(string component, string repo, string tag) =>
+        File.WriteAllText(MetaFile(component), JsonSerializer.Serialize(new InstallMeta(repo, tag)));
+
+    /// <summary>旧版安装版本记录（components\{component}\.version，内容为 release tag；新安装已并入 .installed，仅为兼容保留读取）</summary>
     private static string VersionFile(string component) => Path.Combine(ComponentsDir, component, ".version");
 
     private static string? ReadVersion(string component)
@@ -456,9 +521,6 @@ public static class ComponentManager
             return null;
         }
     }
-
-    private static void SaveVersion(string component, string tag) =>
-        File.WriteAllText(VersionFile(component), tag);
 
     /// <summary>组件 zip 资产名（framework-dependent，按平台 native 库分 zip）</summary>
     private static string AssetName(string baseName)
