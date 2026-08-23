@@ -54,6 +54,7 @@ public static class Program
         var store = new HostStore();
         var config = new HostConfig(events);
         Config.Init(config);
+#pragma warning disable CS0618   // Logger/Config 属性已 Obsolete：兼容旧组件的通道，宿主必须继续赋值
         return new Application
         {
             Logger = logger,
@@ -65,6 +66,7 @@ public static class Program
             Http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) },
             Services = new ServiceRegistry(),
         };
+#pragma warning restore CS0618
     }
 
     /// <summary>注册组件命令：已装 → 加载 dll → 找 IEntry → StartAsync(App) → 注册 Commands（--help 直接显示）；
