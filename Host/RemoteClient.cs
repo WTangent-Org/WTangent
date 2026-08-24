@@ -17,9 +17,9 @@ public sealed class RemoteClient(IAppStore store) : IRemoteClient
     public Task<string?> AskAsync(string remote, string prompt, CancellationToken ct = default)
     {
         var hit = ListRemotes().FirstOrDefault(r => r.Name == remote);
-        if (hit is null)
-            return Task.FromResult<string?>($"远程 {remote} 未配置（wtangent remote add）");
-        return Task.FromResult<string?>($"远程客户端尚未实现（serve 会话协议后续随 Core 下沉提供）");
+        return Task.FromResult<string?>(hit is null
+            ? $"远程 {remote} 未配置（wtangent remote add）"
+            : "远程客户端尚未实现（serve 会话协议后续随 Core 下沉提供）");
     }
 
     public async IAsyncEnumerable<string> StreamAsync(string remote, string prompt,

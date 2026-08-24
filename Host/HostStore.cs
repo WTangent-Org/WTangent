@@ -7,6 +7,8 @@ namespace WTangent.Host;
 /// 写 = temp + rename 原子替换，防半写文件。</summary>
 public sealed class HostStore : IAppStore
 {
+    private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
+
     private readonly string _dir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "agent");
 
@@ -40,5 +42,5 @@ public sealed class HostStore : IAppStore
     }
 
     public void WriteJson<T>(string name, T value) =>
-        WriteText(name, JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true }));
+        WriteText(name, JsonSerializer.Serialize(value, JsonOpts));
 }

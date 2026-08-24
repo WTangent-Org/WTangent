@@ -6,8 +6,10 @@ namespace WTangent.Host;
 /// <summary>配置实现（%APPDATA%\agent\config.json）：内存字典 + 原子写持久化；变更发 config.changed。</summary>
 public sealed class HostConfig : IConfig
 {
+    private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
+
     private readonly IEventBus _events;
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private readonly string _file = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "agent", "config.json");
     private readonly Dictionary<string, object?> _data = new(StringComparer.OrdinalIgnoreCase);
@@ -29,7 +31,7 @@ public sealed class HostConfig : IConfig
 
     public T? Get<T>(string key)
     {
-        lock (_lock)
+        using (_lock.EnterScope())
         {
             if (!_data.TryGetValue(key, out var v) || v is null) return default;
             try { return (T)Convert.ChangeType(v, typeof(T)); }
@@ -39,7 +41,7 @@ public sealed class HostConfig : IConfig
 
     public void Set<T>(string key, T value)
     {
-        lock (_lock)
+        using (_lock.EnterScope())
         {
             _data[key] = value;
             Save();
@@ -49,7 +51,7 @@ public sealed class HostConfig : IConfig
 
     public void Remove(string key)
     {
-        lock (_lock)
+        using (_lock.EnterScope())
         {
             if (_data.Remove(key)) Save();
         }
@@ -61,7 +63,7 @@ public sealed class HostConfig : IConfig
         var dir = Path.GetDirectoryName(_file)!;
         Directory.CreateDirectory(dir);
         var tmp = _file + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(_data, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(tmp, JsonSerializer.Serialize(_data, JsonOpts));
         File.Move(tmp, _file, overwrite: true);
     }
 }

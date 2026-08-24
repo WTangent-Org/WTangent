@@ -110,7 +110,15 @@ public static class ComponentManager
             var f = ManifestFile(name);
             return File.Exists(f) ? JsonSerializer.Deserialize<ManifestEntry>(File.ReadAllText(f), JsonOpts) : null;
         }
-        catch
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+        catch (JsonException)
         {
             return null;
         }
@@ -175,7 +183,7 @@ public static class ComponentManager
         }
     }
 
-    /// <summary>加载组件入口（找 IEntry 实现 → 实例化 → StartAsync 注入 App）；失败提示并返回 null</summary>
+    /// <summary>加载组件入口（找 IEntry 实现 → 构造注入 App 实例化；不启动——启动见 <see cref="StartEntry"/>）；失败提示并返回 null</summary>
     public static IEntry? LoadEntry(string name, Application app)
     {
         if (!TryLoadComponent(name, out var asm)) return null;
@@ -187,15 +195,22 @@ public static class ComponentManager
         }
         try
         {
-            var entry = (IEntry)Activator.CreateInstance(entryType, app)!;   // 构造注入
-            entry.StartAsync(app).GetAwaiter().GetResult();
-            return entry;
+            return (IEntry)Activator.CreateInstance(entryType, app)!;   // 构造注入
         }
         catch (Exception e)
         {
-            Console.Error.WriteLine($"[wtangent] 组件 {name} 入口启动失败：{e.Message}");
+            Console.Error.WriteLine($"[wtangent] 组件 {name} 入口构造失败：{e.Message}");
             return null;
         }
+    }
+
+    /// <summary>启动组件入口（PCL-CE 式分流：SupportAsyncStart = true → Task.Run 后台并行，调用方统一 await；
+    /// false → 当前线程串行执行完再返回，同步组件的异常直接抛给调用方）</summary>
+    public static Task StartEntry(IEntry entry)
+    {
+        if (entry.SupportAsyncStart) return Task.Run(entry.StartAsync);
+        entry.StartAsync().GetAwaiter().GetResult();
+        return Task.CompletedTask;
     }
 
     /// <summary>组件入口文件（本地缓存优先；缺失时从仓库拉取并缓存到 components\{name}\agent-component.json）</summary>
@@ -239,36 +254,6 @@ public static class ComponentManager
             return null;   // 组件依赖缺失（版本不符等）：命令注册走占位，不崩
         }
     }
-
-    /// <summary>执行组件顶级行为（IEntry.Default）</summary>
-    public static int RunDefault(string component, Application app, string[] passthrough)
-    {
-        if (!IsInstalled(component))
-        {
-            Console.WriteLine($"[wtangent] {component} 组件未安装。");
-            Console.WriteLine($"[wtangent] 请先运行：wtangent install {component}");
-            return 1;
-        }
-        var entry = LoadEntry(component, app);
-        if (entry is null) return 1;
-        if (entry.Default is null)
-        {
-            Console.Error.WriteLine($"[wtangent] 组件 {component} 无顶级行为（Default）");
-            return 1;
-        }
-        try
-        {
-            return entry.Default(passthrough);
-        }
-        catch (Exception e)
-        {
-            Console.Error.WriteLine($"[wtangent] 执行 {component} 组件失败：{e.Message}");
-            return 1;
-        }
-    }
-
-    /// <summary>读取组件命令（IEntry.Commands：(命令, 父路径) 元组）</summary>
-    public static (Command Command, string? ParentPath)[] ReadCommands(IEntry entry) => entry.Commands;
 
     /// <summary>安装组件：拉入口文件（agent-component.json）→ 下载 zip → 解压（web 类进 %APPDATA%\agent\web，
     /// 其余进 components\{name}，含 web/ 处理）；装后写安装元数据（.installed：来源仓库 + 版本）</summary>
@@ -333,7 +318,9 @@ public static class ComponentManager
         catch (Exception e)
         {
             Console.Error.WriteLine($"[agent] 解压失败：{e.Message}");
-            try { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); } catch { }
+            try { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
             return 1;
         }
         SaveMeta(name, repo, tag);
@@ -370,12 +357,12 @@ public static class ComponentManager
         var targets = component is null
             ? InstalledComponents()
             : IsInstalled(component) ? [component] : [];
-        if (component is not null && !targets.Any())
+        if (component is not null && targets.Count == 0)
         {
             Console.WriteLine($"[wtangent] {component} 未安装（wtangent install {component}）");
             return 0;
         }
-        if (!targets.Any())
+        if (targets.Count == 0)
         {
             Console.WriteLine("[wtangent] 未安装任何组件（wtangent install serve|tui|gui|web）");
             return 0;
@@ -435,7 +422,9 @@ public static class ComponentManager
                 if (list is { Count: > 0 }) return list;
             }
         }
-        catch { }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        catch (JsonException) { }
         return [.. FallbackIndex];
     }
 
@@ -498,7 +487,15 @@ public static class ComponentManager
             var v = ReadVersion(component);   // 旧安装只有 .version
             return v is null ? null : new InstallMeta(null, v);
         }
-        catch
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+        catch (JsonException)
         {
             return null;
         }
@@ -516,7 +513,11 @@ public static class ComponentManager
         {
             return File.Exists(VersionFile(component)) ? File.ReadAllText(VersionFile(component)).Trim() : null;
         }
-        catch
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
         {
             return null;
         }
