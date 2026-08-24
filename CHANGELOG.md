@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.1](https://github.com/WTangent-Org/WTangent/compare/v0.8.0...v0.8.1) (2026-08-24)
+
+
+### ✨ 新功能
+
+* 组件启动 PCL-CE 式分流（StartEntry：SupportAsyncStart 并行/串行）；LoadEntry 只构造不启动，消除 RunTopLevel 双重启动；Components 升 0.0.11；R# 清理 ([80c46a3](https://github.com/WTangent-Org/WTangent/commit/80c46a352ec84c018783f32764c7f6f0c15c549a))
+
+
+### 🧹 其他
+
+* release-please 1.0 前 feat 也只 bump patch；修正 extra-files 指向（Agent.csproj→WTangent.csproj），csproj 版本对齐 0.8.0 ([b1d256a](https://github.com/WTangent-Org/WTangent/commit/b1d256acb11968058641d5a2e45b8c8caa566663))
+
 ## [0.8.0](https://github.com/WTangent-Org/WTangent/compare/v0.7.1...v0.8.0) (2026-08-23)
 
 
