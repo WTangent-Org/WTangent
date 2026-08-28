@@ -35,7 +35,9 @@ public static partial class ComponentManager
     {
         try
         {
-            var json = await Http.GetStringAsync(IndexUrl);
+            // 短超时：索引是个几 KB 的 json，且启动路径会走到（RefreshIndexSilently），不能让慢网络拖住启动
+            using var http = NewHttp(TimeSpan.FromSeconds(5));
+            var json = await http.GetStringAsync(IndexUrl);
             var list = JsonSerializer.Deserialize<List<IndexEntry>>(json, JsonOpts);
             if (list is not { Count: > 0 }) return false;
             Directory.CreateDirectory(Path.GetDirectoryName(IndexFile)!);

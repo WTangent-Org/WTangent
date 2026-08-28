@@ -178,17 +178,22 @@ public static partial class ComponentManager
             return 0;
         }
         var rc = 0;
-        foreach (var name in targets)
+        // 最新 tag 并行查询（每组件一次网络往返，串行时全量 upgrade 的等待随组件数线性涨）
+        var tags = await Task.WhenAll(targets.Select(async name =>
         {
             var meta = ReadMeta(name);
             var repo = meta?.Repo ?? Index.FirstOrDefault(x => x.Alias == name)?.Repo;
+            return (Name: name, Meta: meta, Repo: repo,
+                Tag: repo is null ? null : await LatestTagAsync(repo, name));
+        }));
+        foreach (var (name, meta, repo, tag) in tags)
+        {
             if (repo is null)
             {
                 Console.Error.WriteLine($"[agent] {name} 来源仓库未知（无安装元数据且索引里没有），跳过");
                 rc = 1;
                 continue;
             }
-            var tag = await LatestTagAsync(repo, name);
             if (tag is null) { rc = 1; continue; }
             var local = meta?.Version;
             if (local == tag)
@@ -221,13 +226,14 @@ public static partial class ComponentManager
         }
     }
 
-    /// <summary>下载 URL 到目标文件；失败提示并返回 false</summary>
+    /// <summary>下载 URL 到目标文件（长超时：组件 zip 可达几十 MB，15s 全局超时会误杀慢网络）；失败提示并返回 false</summary>
     private static async Task<bool> DownloadAsync(string url, string dest)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
         try
         {
-            using var resp = await Http.GetAsync(url);
+            using var http = NewHttp(TimeSpan.FromMinutes(5));
+            using var resp = await http.GetAsync(url);
             if (!resp.IsSuccessStatusCode)
             {
                 Console.Error.WriteLine($"[agent] 下载失败：HTTP {(int)resp.StatusCode}（URL：{url}）");
