@@ -77,6 +77,7 @@ public static class Program
     {
         var loaded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var starts = new List<(string Name, Task Task)>();
+        var componentTools = new List<ITool>();
         foreach (var name in ComponentManager.LoadOrder(ComponentManager.InstalledComponents()))
         {
             var entry = await ComponentManager.LoadEntryAsync(name, App);
@@ -94,6 +95,7 @@ public static class Program
             var canOverride = name is "serve" or "tui" or "gui";
             foreach (var (cmd, parentPath) in entry.Commands)
                 AddComponentCommand(root, cmd, parentPath, canOverride);
+            if (entry.Tools is { Count: > 0 }) componentTools.AddRange(entry.Tools);
             loaded.Add(name);
         }
         // 统一等异步启动收尾（同步组件此刻早已跑完）
@@ -102,6 +104,9 @@ public static class Program
             try { await task; }
             catch (Exception e) { Console.Error.WriteLine($"[wtangent] 组件 {name} 启动失败：{e.Message}"); }
         }
+        // 组件工具聚合：只在此处收集一次（每个组件单实例、单次启动；serve 经 App.Services 取用，不再重扫目录二次构造）
+        if (componentTools.Count > 0)
+            App.Services.TryRegister<IReadOnlyList<ITool>>(componentTools);
         // 未装 / 加载失败：占位（重名时跳过，避免命令树冲突）
         foreach (var alias in ComponentManager.Index.Select(e => e.Alias))
         {
