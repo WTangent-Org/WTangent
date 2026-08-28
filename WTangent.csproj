@@ -15,6 +15,7 @@
     <!-- ProjectReference 不经包的 buildTransitive props，生成器需要的属性这里手动声明（与包内 props 一致） -->
     <CompilerVisibleProperty Include="ProjectDir"/>
     <CompilerVisibleProperty Include="AssemblyName"/>
+    <CompilerVisibleProperty Include="ComponentDepends"/>
   </ItemGroup>
 
   <!-- 空壳对组件只有运行时关系（Assembly.LoadFrom + IEntry 反射），不引用组件源码；

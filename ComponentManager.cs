@@ -15,8 +15,11 @@ public sealed record IndexEntry(string Alias, string Repo);
 
 /// <summary>组件入口文件（agent-component.json：组件仓库根自声明——资产名等元数据；
 /// 类型已废弃：行为由 IEntry 能力决定，不再按 type 分流；
-/// MinCore = 组件编译时引用的 Core 版本（生成器构建时自动写入），install/upgrade 时校验空壳内置 Core ≥ 它）</summary>
-public sealed record ManifestEntry(string Name, string Asset, string? MinCore = null);
+/// MinCore = 组件编译时引用的 Core 版本（生成器构建时自动写入），install/upgrade 时校验空壳内置 Core ≥ 它；
+/// Depends = 组件间编译期互引的运行时声明（别名→最低版本；csproj ComponentDepends 属性 → 生成器写入）；
+/// Core 是每个组件的隐式必备依赖（即 minCore），不在 Depends 里声明）</summary>
+public sealed record ManifestEntry(string Name, string Asset, string? MinCore = null,
+    Dictionary<string, string>? Depends = null);
 
 /// <summary>组件管理：索引（apt 模式）+ 安装/卸载/升级 + dll 加载 + Entry 反射推导 + 依赖解析</summary>
 public static class ComponentManager
@@ -252,8 +255,11 @@ public static class ComponentManager
     }
 
     /// <summary>安装组件：拉入口文件（agent-component.json）→ 下载 zip → 解压（web 类进 %APPDATA%\agent\web，
-    /// 其余进 components\{name}，含 web/ 处理）；装后写安装元数据（.installed：来源仓库 + 版本）</summary>
-    public static int Install(string component, bool force)
+    /// 其余进 components\{name}，含 web/ 处理）；装后写安装元数据（.installed：来源仓库 + 版本）。
+    /// 组件间依赖（manifest.depends）先解析：未装自动拉装、版本不足拒装、循环依赖报错</summary>
+    public static int Install(string component, bool force) => InstallCore(component, force, []);
+
+    private static int InstallCore(string component, bool force, HashSet<string> chain)
     {
         var entry = Index.FirstOrDefault(e => e.Alias == component);
         if (entry is null)
@@ -279,6 +285,9 @@ public static class ComponentManager
             Console.Error.WriteLine("[wtangent] 请重新运行安装脚本升级空壳（install.ps1 / install.sh）");
             return 1;
         }
+        // 组件间依赖解析：未装自动拉装（递归）、已装校验最低版本、循环依赖报错
+        if (manifest.Depends is { Count: > 0 } && !ResolveDepends(name, manifest.Depends, chain))
+            return 1;
         var asset = manifest.Asset;
         var dir = ComponentDir(name);
         var marker = IsInstalled(name);
@@ -324,7 +333,64 @@ public static class ComponentManager
         return 0;
     }
 
-    /// <summary>卸载组件：删组件目录（含安装元数据）；纯本地操作，不查远程索引</summary>
+    /// <summary>组件间依赖解析（install 期）：未装 → 递归自动拉装；已装 → 校验最低版本（tag 去 v 前缀比较，
+    /// local-dev/未知版本跳过校验——本地开发安装不挡）；chain 检出循环依赖。失败打印原因并返回 false</summary>
+    private static bool ResolveDepends(string name, Dictionary<string, string> depends, HashSet<string> chain)
+    {
+        if (!chain.Add(name))
+        {
+            Console.Error.WriteLine($"[wtangent] 循环依赖：{string.Join(" → ", chain)} → {name}");
+            return false;
+        }
+        try
+        {
+            foreach (var (dep, minVer) in depends)
+            {
+                if (!IsInstalled(dep))
+                {
+                    Console.WriteLine($"[wtangent] {name} 依赖 {dep}（≥ {minVer}），自动安装…");
+                    if (InstallCore(dep, force: false, chain) != 0)
+                    {
+                        Console.Error.WriteLine($"[wtangent] 依赖 {dep} 安装失败，{name} 中止");
+                        return false;
+                    }
+                    continue;
+                }
+                var local = ReadMeta(dep)?.Version;
+                if (local is null or "local-dev") continue;
+                if (Version.TryParse(minVer, out var need)
+                    && Version.TryParse(local.TrimStart('v'), out var have) && have < need)
+                {
+                    Console.Error.WriteLine($"[wtangent] {name} 需要 {dep} ≥ {minVer}（当前 {local}），先 wtangent upgrade {dep}");
+                    return false;
+                }
+            }
+            return true;
+        }
+        finally { chain.Remove(name); }
+    }
+
+    /// <summary>已装组件加载顺序：depends 拓扑序（依赖先于依赖方），同层按索引优先级；检出环时退化为纯优先级序</summary>
+    public static List<string> LoadOrder(List<string> installed)
+    {
+        var deps = installed.ToDictionary(
+            n => n,
+            n => (ReadLocalManifest(n)?.Depends?.Keys.Where(installed.Contains).ToList() ?? []),
+            StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>(installed.Count);
+        var remaining = installed.OrderBy(PriorityOf).ToList();
+        while (remaining.Count > 0)
+        {
+            var ready = remaining.Where(n => deps[n].All(result.Contains)).ToList();
+            if (ready.Count == 0) { result.AddRange(remaining); break; }   // 环：拓扑让位优先级
+            result.AddRange(ready);
+            foreach (var r in ready) remaining.Remove(r);
+        }
+        return result;
+    }
+
+    /// <summary>卸载组件：删组件目录（含安装元数据）；纯本地操作，不查远程索引。
+    /// 有其他已装组件 depends 它时拒删（列出依赖方）</summary>
     public static int Remove(string component)
     {
         var dir = ComponentDir(component);
@@ -332,6 +398,16 @@ public static class ComponentManager
         {
             Console.WriteLine($"[agent] {component} 未安装");
             return 0;
+        }
+        // 卸载保护：有已装组件声明依赖它时拒删
+        var users = InstalledComponents()
+            .Where(n => !n.Equals(component, StringComparison.OrdinalIgnoreCase)
+                && ReadLocalManifest(n)?.Depends?.ContainsKey(component) is true)
+            .ToList();
+        if (users.Count > 0)
+        {
+            Console.Error.WriteLine($"[wtangent] {component} 被依赖中，拒删：{string.Join(", ", users)}（先卸载它们）");
+            return 1;
         }
         try
         {

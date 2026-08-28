@@ -68,7 +68,7 @@ public static class Program
         };
     }
 
-    /// <summary>注册组件命令：已装（纯本地扫描，按索引优先级排序）→ 加载 dll → 找 IEntry → 启动（SupportAsyncStart
+    /// <summary>注册组件命令：已装（纯本地扫描，depends 拓扑序——依赖先于依赖方，同层按索引优先级）→ 加载 dll → 找 IEntry → 启动（SupportAsyncStart
     /// 分流：异步的 Task.Run 并行、同步的当场串行）→ 注册 Commands（--help 直接显示）；
     /// 索引里已知但未装/加载失败 → 简单占位（提示安装）。索引只是远程清单，不代表本地装了什么。
     /// 能力由组件自己声明：Commands 非空即注册；sub（只订阅事件）/tool（只给 Tools）自然无命令可注册。
@@ -77,7 +77,7 @@ public static class Program
     {
         var loaded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var starts = new List<(string Name, Task Task)>();
-        foreach (var name in ComponentManager.InstalledComponents().OrderBy(ComponentManager.PriorityOf))
+        foreach (var name in ComponentManager.LoadOrder(ComponentManager.InstalledComponents()))
         {
             var entry = ComponentManager.LoadEntry(name, App);
             if (entry is null) continue;   // 加载失败 → 落占位
