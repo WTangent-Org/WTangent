@@ -3,14 +3,14 @@ using System.Reflection;
 using System.Runtime.Loader;
 using WTangent.Commands;
 using WTangent.Core;
-using WTangent.Host;
 
 namespace WTangent;
 
 /// <summary>wtangent 启动器（空壳）：self-contained 带 .NET 运行时；组件为 framework-dependent dll，
 /// 下载解压后由本进程加载（共享运行时）。组件元数据 = GitHub components.json 索引（apt 模式），
 /// 组件暴露 Command 列表注册到空壳命令树；入口约定：public static class Entry（Commands + Default + App）。
-/// 宿主实现 Application（Logger/Events/Config/Store/Remote/GuiHost/Services）并注入每个组件（Entry.App）。</summary>
+/// 空壳定位 = 引导器：组件加载 + 命令注册；Application 的默认实现来自 Core（Default* 类），
+/// 空壳只组装并注入每个组件（Entry.App）；RemoteClient 协议未下沉，暂留本仓。</summary>
 public static class Program
 {
     /// <summary>组件运行时上下文（宿主实现；注入已加载组件的 Entry.App）</summary>
@@ -47,24 +47,24 @@ public static class Program
         return rc;
     }
 
-    /// <summary>组装宿主 Application：所有契约由主仓实现，组件经 Entry.App 使用；
+    /// <summary>组装 Application：契约默认实现全部来自 Core（Default* 类），组件经 Entry.App 使用；
     /// 同步注入 Core 全局门面 Log/Config（组件任意位置 Log.Info / Config.Get 直达，单 ALC 下静态唯一）</summary>
     private static Application BuildApp()
     {
-        var logger = new HostLogger();
+        var logger = new DefaultLogger();
         Log.Init(logger);
-        var events = new HostEventBus(logger);
-        var store = new HostStore();
-        var config = new HostConfig(events);
+        var events = new DefaultEventBus(logger);
+        var store = new DefaultStore();
+        var config = new DefaultConfig(events);
         Config.Init(config);
         return new Application
         {
             Events = events,
             Store = store,
             Remote = new RemoteClient(store),
-            GuiHost = new GuiHost(),
+            GuiHost = new DefaultGuiHost(),
             Http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) },
-            Services = new ServiceRegistry(),
+            Services = new DefaultServiceRegistry(),
         };
     }
 
