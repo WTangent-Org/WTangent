@@ -65,3 +65,4 @@ deps/
 
 # 本地 NuGet 源配置（D:\nuget-local）
 nuget.config
+[Oo]ut/

@@ -35,8 +35,9 @@ public static class Program
         root.Add(new RemoveCommand());
         root.Add(new UpgradeCommand());
         root.Add(new UpdateCommand());
-        // 管理命令不加载组件：组件 dll 一经加载即被本进程锁定，Windows 上 install --force/upgrade/remove 会删不动目录（自锁）
-        if (args is not ["install" or "remove" or "upgrade" or "update", ..])
+        root.Add(new DevCommand());
+        // 管理/开发命令不加载组件：组件 dll 一经加载即被本进程锁定，Windows 上 install --force/upgrade/remove/dev install 会删不动目录（自锁）
+        if (args is not ["install" or "remove" or "upgrade" or "update" or "dev", ..])
             RegisterComponentCommands(root);
 
         // 顶级（无子命令）→ 已装且带 Default 的组件（headless 顺序）
