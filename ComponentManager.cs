@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.CommandLine;
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -144,7 +145,7 @@ public static class ComponentManager
     }
 
     /// <summary>组件表查找（别名）；未知名字打印提示并返回 false</summary>
-    public static bool TryComponent(string alias, out IndexEntry entry)
+    public static bool TryComponent(string alias,[NotNullWhen(true)] out IndexEntry? entry)
     {
         var hit = Index.FirstOrDefault(e => e.Alias == alias);
         if (hit is not null)
@@ -152,13 +153,13 @@ public static class ComponentManager
             entry = hit;
             return true;
         }
-        entry = null!;
+        entry = null;
         Console.Error.WriteLine($"[wtangent] 未知组件 {alias}（wtangent update 刷新索引后重试）");
         return false;
     }
 
     /// <summary>加载组件 dll（默认上下文，使编译期引用绑定到下载的 dll）；失败提示并返回 false</summary>
-    public static bool TryLoadComponent(string name, out Assembly asm)
+    public static bool TryLoadComponent(string name,[NotNullWhen(true)] out Assembly? asm)
     {
         var manifest = GetManifest(name);
         var dll = manifest is null
@@ -166,7 +167,7 @@ public static class ComponentManager
             : Path.Combine(ComponentDir(name), manifest.Asset + ".dll");
         if (!File.Exists(dll))
         {
-            asm = null!;
+            asm = null;
             return false;
         }
         try
@@ -177,13 +178,13 @@ public static class ComponentManager
         }
         catch (Exception e)
         {
-            asm = null!;
+            asm = null;
             Console.Error.WriteLine($"[wtangent] 加载 {name} 组件失败：{e.Message}");
             return false;
         }
     }
 
-    /// <summary>加载组件入口（找 IEntry 实现 → 构造注入 App 实例化；不启动——启动见 <see cref="StartEntry"/>）；失败提示并返回 null</summary>
+    /// <summary>加载组件入口（找 IEntry 实现 → 构造注入 App 实例化；启动见 <see cref="StartEntry"/>）；失败提示并返回 null</summary>
     public static IEntry? LoadEntry(string name, Application app)
     {
         if (!TryLoadComponent(name, out var asm)) return null;
@@ -204,14 +205,9 @@ public static class ComponentManager
         }
     }
 
-    /// <summary>启动组件入口（PCL-CE 式分流：SupportAsyncStart = true → Task.Run 后台并行，调用方统一 await；
-    /// false → 当前线程串行执行完再返回，同步组件的异常直接抛给调用方）</summary>
-    public static Task StartEntry(IEntry entry)
-    {
-        if (entry.SupportAsyncStart) return Task.Run(entry.StartAsync);
-        entry.StartAsync().GetAwaiter().GetResult();
-        return Task.CompletedTask;
-    }
+    /// <summary>启动组件入口</summary>
+    public static Task StartEntry(IEntry entry) =>
+        entry.SupportAsyncStart ? Task.Run(entry.StartAsync) : entry.StartAsync();
 
     /// <summary>组件入口文件（本地缓存优先；缺失时从仓库拉取并缓存到 components\{name}\agent-component.json）</summary>
     public static ManifestEntry? GetManifest(string name)
