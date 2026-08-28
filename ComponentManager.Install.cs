@@ -12,6 +12,10 @@ public static partial class ComponentManager
     /// 组件间依赖（manifest.depends）先解析：未装自动拉装、版本不足拒装、循环依赖报错</summary>
     public static Task<int> InstallAsync(string component, bool force) => InstallCoreAsync(component, force, []);
 
+    /// <summary>确保组件已装（dev restore 拉依赖用）：已装原样成功，未装走完整安装链</summary>
+    internal static Task<int> EnsureInstalledAsync(string component) =>
+        IsInstalled(component) ? Task.FromResult(0) : InstallCoreAsync(component, force: false, []);
+
     private static async Task<int> InstallCoreAsync(string component, bool force, HashSet<string> chain)
     {
         var entry = Index.FirstOrDefault(e => e.Alias == component);
@@ -63,7 +67,7 @@ public static partial class ComponentManager
             ZipFile.ExtractToDirectory(zip, tmp);
             File.Delete(zip);
             // 代码组件 → components\{name}（ui/cmd/tool 统一；serve 包内 web/ 资源 → %APPDATA%\agent\web）
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            if (Directory.Exists(dir)) DeleteDirRetry(dir);
             Directory.Move(tmp, dir);
             var webSrc = Path.Combine(dir, "web");
             if (Directory.Exists(webSrc))
@@ -145,7 +149,7 @@ public static partial class ComponentManager
         }
         try
         {
-            Directory.Delete(dir, true);
+            DeleteDirRetry(dir);
             Console.WriteLine($"[agent] {component} 已卸载");
             return 0;
         }

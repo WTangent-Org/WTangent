@@ -107,11 +107,15 @@ public static partial class ComponentManager
         }
     }
 
-    /// <summary>组件依赖解析：优先各组件自己的 deps.json（AssemblyDependencyResolver，确定性、按组件隔离版本）；
-    /// 兜底按名直扫组件目录（无 deps.json 的旧包）。
-    /// Core / System.CommandLine 等空壳已加载的程序集由 ALC 按简单名统一，永远到不了这里。</summary>
+    /// <summary>组件依赖解析：单 ALC 统一优先——Core 等空壳已加载的程序集按简单名复用
+    /// （组件编译引用的 Core 版本号与内置 Core 常有出入，LoadFrom 绑定对版本敏感，
+    /// 不在这里归一就会绑定失败炸掉组件类型加载；ABI 兼容由 install 期的 minCore 门禁保证）。
+    /// 之后优先各组件自己的 deps.json（AssemblyDependencyResolver，确定性、按组件隔离版本）；
+    /// 兜底按名直扫组件目录（无 deps.json 的旧包）。</summary>
     public static Assembly? ResolveComponentDependency(AssemblyLoadContext ctx, AssemblyName name)
     {
+        var unified = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == name.Name);
+        if (unified is not null) return unified;
         foreach (var resolver in Resolvers.Values)
         {
             var p = resolver.ResolveAssemblyToPath(name);
