@@ -7,9 +7,9 @@ public sealed class UpdateCommand : Command
 {
     public UpdateCommand() : base("update", "刷新组件索引（components.json 缓存）")
     {
-        SetAction(_ =>
+        SetAction(async _ =>
         {
-            var ok = ComponentManager.UpdateIndex();
+            var ok = await ComponentManager.UpdateIndexAsync();
             Console.WriteLine(ok
                 ? $"[wtangent] 索引已刷新：{ComponentManager.Index.Count} 个组件（{ComponentManager.IndexUrl}）"
                 : "[wtangent] 索引刷新失败（离线？用本地缓存）");

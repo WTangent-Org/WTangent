@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Text.Json;
@@ -48,36 +47,31 @@ public static partial class ComponentManager
         return list;
     }
 
-    /// <summary>加载组件 dll（默认上下文，使编译期引用绑定到下载的 dll）；失败提示并返回 false</summary>
-    public static bool TryLoadComponent(string name,[NotNullWhen(true)] out Assembly? asm)
+    /// <summary>加载组件 dll（默认上下文，使编译期引用绑定到下载的 dll）；失败提示并返回 null</summary>
+    public static async Task<Assembly?> TryLoadComponentAsync(string name)
     {
-        var manifest = GetManifest(name);
+        var manifest = await GetManifestAsync(name);
         var dll = manifest is null
             ? Path.Combine(ComponentDir(name), name + ".dll")
             : Path.Combine(ComponentDir(name), manifest.Asset + ".dll");
-        if (!File.Exists(dll))
-        {
-            asm = null;
-            return false;
-        }
+        if (!File.Exists(dll)) return null;
         try
         {
-            asm = Assembly.LoadFrom(dll);
+            var asm = Assembly.LoadFrom(dll);
             Resolvers[name] = new AssemblyDependencyResolver(dll);   // 依赖解析走该组件自己的 deps.json
-            return true;
+            return asm;
         }
         catch (Exception e)
         {
-            asm = null;
             Console.Error.WriteLine($"[wtangent] 加载 {name} 组件失败：{e.Message}");
-            return false;
+            return null;
         }
     }
 
     /// <summary>加载组件入口（找 IEntry 实现 → 构造注入 App 实例化；启动见 <see cref="StartEntry"/>）；失败提示并返回 null</summary>
-    public static IEntry? LoadEntry(string name, Application app)
+    public static async Task<IEntry?> LoadEntryAsync(string name, Application app)
     {
-        if (!TryLoadComponent(name, out var asm)) return null;
+        if (await TryLoadComponentAsync(name) is not { } asm) return null;
         var entryType = FindEntryType(asm);
         if (entryType is null)
         {
@@ -133,7 +127,7 @@ public static partial class ComponentManager
     }
 
     /// <summary>组件入口文件（本地缓存优先；缺失时从仓库拉取并缓存到 components\{name}\agent-component.json）</summary>
-    public static ManifestEntry? GetManifest(string name)
+    public static async Task<ManifestEntry?> GetManifestAsync(string name)
     {
         if (ReadLocalManifest(name) is { } cached) return cached;
         if (!TryComponent(name, out var entry)) return null;
@@ -142,7 +136,7 @@ public static partial class ComponentManager
         try
         {
             using var http = NewHttp(TimeSpan.FromSeconds(30));
-            var json = http.GetStringAsync(remote).GetAwaiter().GetResult();
+            var json = await http.GetStringAsync(remote);
             var manifest = JsonSerializer.Deserialize<ManifestEntry>(json, JsonOpts);
             if (manifest is not null)
             {

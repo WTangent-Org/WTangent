@@ -31,11 +31,11 @@ public static partial class ComponentManager
     }
 
     /// <summary>刷新索引：拉 GitHub components.json 写缓存；quiet 时失败静默</summary>
-    public static bool UpdateIndex(bool quiet = false)
+    public static async Task<bool> UpdateIndexAsync(bool quiet = false)
     {
         try
         {
-            var json = Http.GetStringAsync(IndexUrl).GetAwaiter().GetResult();
+            var json = await Http.GetStringAsync(IndexUrl);
             var list = JsonSerializer.Deserialize<List<IndexEntry>>(json, JsonOpts);
             if (list is not { Count: > 0 }) return false;
             Directory.CreateDirectory(Path.GetDirectoryName(IndexFile)!);
@@ -52,7 +52,7 @@ public static partial class ComponentManager
     }
 
     /// <summary>启动静默刷新索引（不查版本——更新由 agent upgrade 显式承担）</summary>
-    public static void RefreshIndexSilently() => UpdateIndex(quiet: true);
+    public static Task RefreshIndexSilentlyAsync() => UpdateIndexAsync(quiet: true);
 
     private static List<IndexEntry> LoadIndex()
     {

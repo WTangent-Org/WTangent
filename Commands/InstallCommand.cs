@@ -19,7 +19,7 @@ public sealed class InstallCommand : Command
         var force = new Option<bool>("--force") { Description = "强制重装（默认：已装跳过）" };
         Add(component);
         Add(force);
-        SetAction(pr =>
+        SetAction(async pr =>
         {
             var name = pr.GetValue(component);
             if (name is null)
@@ -27,10 +27,10 @@ public sealed class InstallCommand : Command
                 // 官方组件全装：缺省清单，逐个安装（已装跳过）
                 var rc = 0;
                 foreach (var c in OfficialComponents)
-                    rc |= ComponentManager.Install(c, pr.GetValue(force));
+                    rc |= await ComponentManager.InstallAsync(c, pr.GetValue(force));
                 return rc;
             }
-            return ComponentManager.Install(name, pr.GetValue(force));
+            return await ComponentManager.InstallAsync(name, pr.GetValue(force));
         });
     }
 }

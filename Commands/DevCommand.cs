@@ -36,7 +36,7 @@ public sealed class DevCommand : Command
         var config = new Option<string>("--configuration", "-c") { Description = "构建配置", DefaultValueFactory = _ => "Debug" };
         var rootOpt = new Option<string?>("--root") { Description = "工作区根（缺省自动探测）" };
         var install = new Command("install", "本地源码构建组件（WTangentLocal=true）并部署到 components 目录") { names, config, rootOpt };
-        install.SetAction(pr =>
+        install.SetAction(async pr =>
         {
             var root = pr.GetValue(rootOpt) ?? FindWorkspaceRoot();
             if (root is null)
@@ -47,7 +47,7 @@ public sealed class DevCommand : Command
             var targets = pr.GetValue(names) is { Length: > 0 } list ? list : [.. ComponentMap.Keys];
             var rc = 0;
             foreach (var name in targets)
-                rc |= InstallOne(name, root, pr.GetValue(config) ?? "Debug");
+                rc |= await InstallOneAsync(name, root, pr.GetValue(config) ?? "Debug");
             return rc;
         });
         return install;
@@ -55,7 +55,7 @@ public sealed class DevCommand : Command
 
     /// <summary>构建并部署单个组件：publish（WTangentLocal=true）→ 清空目标目录拷入（镜像 install 解压语义）
     /// → 缓存入口文件 + 写 .installed（Version=local-dev；upgrade 会把它升级回远程 release，本地调试别跑 upgrade）</summary>
-    private static int InstallOne(string name, string root, string configuration)
+    private static async Task<int> InstallOneAsync(string name, string root, string configuration)
     {
         if (!ComponentMap.TryGetValue(name, out var c))
         {
@@ -69,7 +69,7 @@ public sealed class DevCommand : Command
             $"publish \"{Path.Combine(repoDir, c.Proj)}\" -c {configuration} -r {Rid} --self-contained false -p:WTangentLocal=true -o \"{outDir}\"")
         { UseShellExecute = false };
         using var proc = Process.Start(psi)!;
-        proc.WaitForExit();
+        await proc.WaitForExitAsync();
         if (proc.ExitCode != 0)
         {
             Console.Error.WriteLine($"[dev] {name} 构建失败");

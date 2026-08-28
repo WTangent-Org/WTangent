@@ -16,13 +16,13 @@ public static class Program
     /// <summary>组件运行时上下文（宿主实现；注入已加载组件的 Entry.App）</summary>
     public static Application App { get; private set; } = null!;
 
-    public static int Main(string[] args)
+    public static async Task<int> Main(string[] args)
     {
         // 组件依赖解析：从已装组件目录补依赖（组件 dll 的 NuGet 依赖如 Terminal.Gui 等）
         AssemblyLoadContext.Default.Resolving += ComponentManager.ResolveComponentDependency;
 
         // 静默刷新组件索引（快速超时，离线静默走缓存；更新提示由 wtangent upgrade 承担）
-        ComponentManager.RefreshIndexSilently();
+        await ComponentManager.RefreshIndexSilentlyAsync();
 
         App = BuildApp();
         App.Events.Publish("app.startup", null);
@@ -38,11 +38,11 @@ public static class Program
         root.Add(new DevCommand());
         // 管理/开发命令不加载组件：组件 dll 一经加载即被本进程锁定，Windows 上 install --force/upgrade/remove/dev install 会删不动目录（自锁）
         if (args is not ["install" or "remove" or "upgrade" or "update" or "dev", ..])
-            RegisterComponentCommands(root);
+            await RegisterComponentCommandsAsync(root);
 
         // 顶级（无子命令）→ 已装且带 Default 的组件（headless 顺序）
-        root.SetAction(_ => RunTopLevel());
-        var rc = root.Parse(args).Invoke();
+        root.SetAction(_ => RunTopLevelAsync());
+        var rc = await root.Parse(args).InvokeAsync();
         App.Events.Publish("app.shutdown", null);
         return rc;
     }
@@ -73,13 +73,13 @@ public static class Program
     /// 索引里已知但未装/加载失败 → 简单占位（提示安装）。索引只是远程清单，不代表本地装了什么。
     /// 能力由组件自己声明：Commands 非空即注册；sub（只订阅事件）/tool（只给 Tools）自然无命令可注册。
     /// 重写规则：仅官方组件（serve/tui/gui）可覆盖重名命令（后注册覆盖先注册）；其余组件重名时跳过并提示。</summary>
-    private static void RegisterComponentCommands(RootCommand root)
+    private static async Task RegisterComponentCommandsAsync(RootCommand root)
     {
         var loaded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var starts = new List<(string Name, Task Task)>();
         foreach (var name in ComponentManager.LoadOrder(ComponentManager.InstalledComponents()))
         {
-            var entry = ComponentManager.LoadEntry(name, App);
+            var entry = await ComponentManager.LoadEntryAsync(name, App);
             if (entry is null) continue;   // 加载失败 → 落占位
             try
             {
@@ -99,7 +99,7 @@ public static class Program
         // 统一等异步启动收尾（同步组件此刻早已跑完）
         foreach (var (name, task) in starts)
         {
-            try { task.GetAwaiter().GetResult(); }
+            try { await task; }
             catch (Exception e) { Console.Error.WriteLine($"[wtangent] 组件 {name} 启动失败：{e.Message}"); }
         }
         // 未装 / 加载失败：占位（重名时跳过，避免命令树冲突）
@@ -184,7 +184,7 @@ public static class Program
 
     /// <summary>顶级 wtangent：已装集合纯本地扫描；索引只定优先级（顺序 = 桌面优先，headless 反转），
     /// 取第一个有 Default 的组件启动并执行</summary>
-    private static int RunTopLevel()
+    private static async Task<int> RunTopLevelAsync()
     {
         var installed = ComponentManager.InstalledComponents();
         var ordered = HeadlessComponent() == "gui"
@@ -192,11 +192,11 @@ public static class Program
             : installed.OrderByDescending(ComponentManager.PriorityOf);
         foreach (var name in ordered)
         {
-            var entry = ComponentManager.LoadEntry(name, App);
+            var entry = await ComponentManager.LoadEntryAsync(name, App);
             if (entry?.Default is null) continue;
             try
             {
-                ComponentManager.StartEntry(entry).GetAwaiter().GetResult();
+                await ComponentManager.StartEntry(entry);
                 return entry.Default([]);
             }
             catch (Exception e)

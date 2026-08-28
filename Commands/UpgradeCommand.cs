@@ -13,6 +13,6 @@ public sealed class UpgradeCommand : Command
             Description = "serve / tui / gui / web（缺省：检查全部已装组件）",
         };
         Add(component);
-        SetAction(pr => ComponentManager.Upgrade(pr.GetValue(component)));
+        SetAction(async pr => await ComponentManager.UpgradeAsync(pr.GetValue(component)));
     }
 }

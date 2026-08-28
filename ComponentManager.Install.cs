@@ -10,15 +10,15 @@ public static partial class ComponentManager
     /// <summary>安装组件：拉入口文件（agent-component.json）→ 下载 zip → 解压（web 类进 %APPDATA%\agent\web，
     /// 其余进 components\{name}，含 web/ 处理）；装后写安装元数据（.installed：来源仓库 + 版本）。
     /// 组件间依赖（manifest.depends）先解析：未装自动拉装、版本不足拒装、循环依赖报错</summary>
-    public static int Install(string component, bool force) => InstallCore(component, force, []);
+    public static Task<int> InstallAsync(string component, bool force) => InstallCoreAsync(component, force, []);
 
-    private static int InstallCore(string component, bool force, HashSet<string> chain)
+    private static async Task<int> InstallCoreAsync(string component, bool force, HashSet<string> chain)
     {
         var entry = Index.FirstOrDefault(e => e.Alias == component);
         if (entry is null)
         {
             // 本地索引没有 → 刷新索引再查一次（第三方组件刚注册进 components.json 的场景）
-            UpdateIndex(quiet: false);
+            await UpdateIndexAsync(quiet: false);
             entry = Index.FirstOrDefault(e => e.Alias == component);
             if (entry is null)
             {
@@ -28,7 +28,7 @@ public static partial class ComponentManager
         }
         var name = entry.Alias;
         var repo = entry.Repo;
-        var manifest = GetManifest(name);
+        var manifest = await GetManifestAsync(name);
         if (manifest is null) return 1;
         // Core 版本门禁：组件编译引用的 Core 高于空壳内置 Core 时拒装
         // （单 ALC 静默绑旧 Core，调用新成员会运行时炸）
@@ -38,8 +38,8 @@ public static partial class ComponentManager
             Console.Error.WriteLine("[wtangent] 请重新运行安装脚本升级空壳（install.ps1 / install.sh）");
             return 1;
         }
-        // 组件间依赖解析：未装自动拉装（递归）、已装校验最低版本、循环依赖报错
-        if (manifest.Depends is { Count: > 0 } && !ResolveDepends(name, manifest.Depends, chain))
+        // 组件间依赖解析：未装自动拉装、版本不足拒装、循环依赖报错
+        if (manifest.Depends is { Count: > 0 } && !await ResolveDependsAsync(name, manifest.Depends, chain))
             return 1;
         var asset = manifest.Asset;
         var dir = ComponentDir(name);
@@ -50,12 +50,12 @@ public static partial class ComponentManager
             Console.WriteLine($"[wtangent] {name} 已安装：{dir}" + (v is null ? "" : $"（{v}）") + "；--force 重装，wtangent upgrade 更新");
             return 0;
         }
-        var tag = LatestTag(repo, name);
+        var tag = await LatestTagAsync(repo, name);
         if (tag is null) return 1;
         var url = $"https://github.com/WTangent-Org/{repo}/releases/latest/download/{AssetName(asset)}";
         Console.WriteLine($"[agent] 下载 {name} {tag} ← {url}");
         var zip = Path.Combine(Path.GetTempPath(), $"{name}-{Guid.NewGuid():N}.zip");
-        if (!Download(url, zip)) return 1;
+        if (!await DownloadAsync(url, zip)) return 1;
         var tmp = Path.Combine(Path.GetTempPath(), $"{name}-{Guid.NewGuid():N}");
         try
         {
@@ -88,7 +88,7 @@ public static partial class ComponentManager
 
     /// <summary>组件间依赖解析（install 期）：未装 → 递归自动拉装；已装 → 校验最低版本（tag 去 v 前缀比较，
     /// local-dev/未知版本跳过校验——本地开发安装不挡）；chain 检出循环依赖。失败打印原因并返回 false</summary>
-    private static bool ResolveDepends(string name, Dictionary<string, string> depends, HashSet<string> chain)
+    private static async Task<bool> ResolveDependsAsync(string name, Dictionary<string, string> depends, HashSet<string> chain)
     {
         if (!chain.Add(name))
         {
@@ -102,7 +102,7 @@ public static partial class ComponentManager
                 if (!IsInstalled(dep))
                 {
                     Console.WriteLine($"[wtangent] {name} 依赖 {dep}（≥ {minVer}），自动安装…");
-                    if (InstallCore(dep, force: false, chain) != 0)
+                    if (await InstallCoreAsync(dep, force: false, chain) != 0)
                     {
                         Console.Error.WriteLine($"[wtangent] 依赖 {dep} 安装失败，{name} 中止");
                         return false;
@@ -158,7 +158,7 @@ public static partial class ComponentManager
 
     /// <summary>检查并更新已装组件：agent upgrade [serve|tui|gui|web]（缺省 = 本地全部已装组件，纯本地扫描）。
     /// 来源仓库优先读安装元数据（.installed），旧安装缺失时回退索引；都查不到则跳过</summary>
-    public static int Upgrade(string? component)
+    public static async Task<int> UpgradeAsync(string? component)
     {
         var targets = component is null
             ? InstalledComponents()
@@ -184,7 +184,7 @@ public static partial class ComponentManager
                 rc = 1;
                 continue;
             }
-            var tag = LatestTag(repo, name);
+            var tag = await LatestTagAsync(repo, name);
             if (tag is null) { rc = 1; continue; }
             var local = meta?.Version;
             if (local == tag)
@@ -193,20 +193,20 @@ public static partial class ComponentManager
                 continue;
             }
             Console.WriteLine($"[agent] {name} {local ?? "未知版本"} → {tag}，更新中…");
-            if (Install(name, force: true) != 0) { rc = 1; continue; }
+            if (await InstallAsync(name, force: true) != 0) { rc = 1; continue; }
             Console.WriteLine($"[agent] {name} 已更新至 {tag}");
         }
         return rc;
     }
 
     /// <summary>查询仓库最新 release tag（GitHub API，需 User-Agent）；失败提示并返回 null</summary>
-    private static string? LatestTag(string repo, string component)
+    private static async Task<string?> LatestTagAsync(string repo, string component)
     {
         try
         {
             using var http = NewHttp(TimeSpan.FromSeconds(20));
             http.DefaultRequestHeaders.UserAgent.ParseAdd("agent-upgrade");
-            var json = http.GetStringAsync($"https://api.github.com/repos/WTangent-Org/{repo}/releases/latest").GetAwaiter().GetResult();
+            var json = await http.GetStringAsync($"https://api.github.com/repos/WTangent-Org/{repo}/releases/latest");
             using var doc = JsonDocument.Parse(json);
             return doc.RootElement.GetProperty("tag_name").GetString();
         }
@@ -218,19 +218,19 @@ public static partial class ComponentManager
     }
 
     /// <summary>下载 URL 到目标文件；失败提示并返回 false</summary>
-    private static bool Download(string url, string dest)
+    private static async Task<bool> DownloadAsync(string url, string dest)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
         try
         {
-            using var resp = Http.GetAsync(url).GetAwaiter().GetResult();
+            using var resp = await Http.GetAsync(url);
             if (!resp.IsSuccessStatusCode)
             {
                 Console.Error.WriteLine($"[agent] 下载失败：HTTP {(int)resp.StatusCode}（URL：{url}）");
                 return false;
             }
             using var fs = File.Create(dest);
-            resp.Content.ReadAsStream().CopyTo(fs);
+            await resp.Content.ReadAsStream().CopyToAsync(fs);
         }
         catch (Exception e)
         {
