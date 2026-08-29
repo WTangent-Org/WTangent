@@ -71,6 +71,8 @@ jobs:
     if: needs.release-please.outputs.release_created == 'true'
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: WTangent
 
       # 编译期引用组件源码（ExcludeAssets=runtime，dll 不随空壳发布）
       - uses: actions/checkout@v4
