@@ -25,7 +25,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>wtangent</AssemblyName>
-    <Version>0.8.2</Version>
+    <Version>0.8.3</Version>
     <!-- 引用组件项目（同为 Exe）时指定空壳自己的入口 -->
     <StartupObject>WTangent.Program</StartupObject>
   </PropertyGroup>

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.3](https://github.com/WTangent-Org/WTangent/compare/v0.8.2...v0.8.3) (2026-08-29)
+
+
+### 🐛 修复
+
+* release 构建作业本仓 checkout 补 path=WTangent（上次补丁被行注释隔断没命中，publish 找不到 csproj） ([95f5eb1](https://github.com/WTangent-Org/WTangent/commit/95f5eb14ec83db64d75096818d6e8e8d7849f132))
+
 ## [0.8.2](https://github.com/WTangent-Org/WTangent/compare/v0.8.1...v0.8.2) (2026-08-29)
 
 
