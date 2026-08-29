@@ -10,7 +10,7 @@ namespace WTangent.Commands;
 ///   GitHub release 补装，Core/生成器 dll 直接拉 Components 仓的 GitHub release 资产（与组件 zip
 ///   同一条下载线），缓存到 %APPDATA%\agent\dev\refs 并生成 wtangent.dev.props；
 /// dev build   = 用 restore 的 props 编译（-p:WTangentDev=true + CustomBeforeMicrosoftCommonProps，不改 csproj）；
-/// dev install = 本地构建并部署组件到 components 目录（官方组件走工作区 WTangentLocal 源码引用；
+/// dev install = 本地构建并部署组件到 components 目录（官方组件走工作区平级源码引用；
 ///   任意仓库用 --proj 走 restore 的引用缓存）。
 /// 分发渠道只有 GitHub release（Core 也是组件，与组件 zip 同一条线，不经任何包平台）。System.CommandLine 由
 /// 组件 csproj 自己包引用提供，restore 不重复注入（避免同程序集双 Reference）。</summary>
@@ -50,7 +50,7 @@ public sealed class DevCommand : Command
         var config = new Option<string>("--configuration", "-c") { Description = "构建配置", DefaultValueFactory = _ => "Debug" };
         var rootOpt = new Option<string?>("--root") { Description = "工作区根（官方组件缺省自动探测；第三方仓传仓根）" };
         var proj = new Option<string?>("--proj") { Description = "任意组件 csproj 路径（第三方仓；引用走 dev restore 缓存）" };
-        var install = new Command("install", "本地构建组件并部署到 components 目录（官方组件 WTangentLocal；--proj 任意仓）")
+        var install = new Command("install", "本地构建组件并部署到 components 目录（官方组件源码引用；--proj 任意仓）")
             { names, config, rootOpt, proj };
         install.SetAction(async pr =>
         {
@@ -89,7 +89,7 @@ public sealed class DevCommand : Command
 
     /// <summary>构建并部署单个组件：publish → 清空目标目录拷入（镜像 install 解压语义）
     /// → 缓存入口文件 + 写 .installed（Version=local-dev；upgrade 会把它升级回远程 release，本地调试别跑 upgrade）。
-    /// useWorkspaceRefs：true = 工作区源码引用（WTangentLocal，官方组件）；false = dev restore 的引用缓存（--proj 第三方仓）</summary>
+    /// useWorkspaceRefs：true = 工作区平级源码引用（官方组件，无需附加属性）；false = dev restore 的引用缓存（--proj 第三方仓）</summary>
     private static async Task<int> DeployAsync(string projFile, string configuration, bool useWorkspaceRefs)
     {
         projFile = Path.GetFullPath(projFile);
@@ -109,9 +109,7 @@ public sealed class DevCommand : Command
         var name = manifest.Name;
         var outDir = Path.Combine(repoDir, "out", "dev-local");
         Console.WriteLine($"== {name} ← {projFile}（{configuration}）");
-        var extraProps = useWorkspaceRefs
-            ? "-p:WTangentLocal=true"
-            : await BuildRefPropsArgsAsync(manifest);
+        var extraProps = useWorkspaceRefs ? "" : await BuildRefPropsArgsAsync(manifest);
         if (extraProps is null) return 1;
         var rc = await RunDotnetAsync(
             $"publish \"{projFile}\" -c {configuration} -r {Rid} --self-contained false {extraProps} -o \"{outDir}\"");

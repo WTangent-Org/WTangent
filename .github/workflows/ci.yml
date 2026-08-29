@@ -1,7 +1,7 @@
 name: ci
 
 # 提交级构建检查：push main / 任何 PR（含 release-please PR）都编译验证，失败则禁止合并。
-# 空壳编译期引用组件（deps/ 下 checkout），组件仓坏了空壳构建即挂——这是有意的依赖。
+# Core/生成器为平级源码引用（ProjectReference），Components 仓坏了空壳构建即挂——这是有意的依赖。
 on:
   push:
     branches: [main]
@@ -15,16 +15,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: WTangent
-
-      - uses: actions/checkout@v4
-        with:
-          repository: WTangent-Org/WTangent.Server
-          path: deps/WTangent.Server
-
-      - uses: actions/checkout@v4
-        with:
-          repository: WTangent-Org/WTangent.Tui
-          path: deps/WTangent.Tui
 
       - uses: actions/setup-dotnet@v4
         with:
