@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.8.2](https://github.com/WTangent-Org/WTangent/compare/v0.8.1...v0.8.2) (2026-08-29)
+
+
+### ✨ 新功能
+
+* wtangent dev install（组件开发工具：WTangentLocal 源码引用构建+本地部署，inner loop 不等发版）；csproj WTangentLocal 条件引用开关 ([156de06](https://github.com/WTangent-Org/WTangent/commit/156de06169235baa2c39b525aa85fa6bacf9ea2a))
+* wtangent dev restore/build（开发者直拉通道）——按 agent-component.json 自动补装 depends（GitHub release 安装链）+ Core/生成器 dll 直拉 Components 仓 release 资产缓存 refs 并生成 wtangent.dev.props；dev build 用 CustomBeforeMicrosoftCommonProps 接入编译（不改 csproj）；dev install 泛化 --proj 支持任意仓；部署清除 Core/System.CommandLine（单 ALC 统一，防旧版双副本 manifest mismatch）；目录被占退避重试 ([71c2393](https://github.com/WTangent-Org/WTangent/commit/71c2393bf0c9a918abc453613f5f40a9247f8eb7))
+* 组件工具聚合——启动时收集各 Entry.Tools 注册进 App.Services（单实例单次启动；serve 只取不扫） ([67bbe90](https://github.com/WTangent-Org/WTangent/commit/67bbe90c289eb6287d2fd4fd511baeb35bacdb46))
+* 组件间依赖门禁——manifest.depends（别名→最低版本）；install 递归解析（自动拉装/版本拒装/循环检测）；remove 卸载保护；加载按 depends 拓扑序 ([79b0465](https://github.com/WTangent-Org/WTangent/commit/79b04650720c239ecb253e24ad52bafe406b2b1e))
+
+
+### 🐛 修复
+
+* CI 布局——本仓 checkout 进同名子目录复刻本地工作区布局（ProjectReference 的 ../ 不再越出工作区），构建路径加前缀 ([9840644](https://github.com/WTangent-Org/WTangent/commit/98406442c3b4e9c4e79eb25e475b968c818fdbf5))
+
+
+### 🧹 其他
+
+* ComponentManager nullability 注解化（NotNullWhen，R# 修复遗留） ([89f53c3](https://github.com/WTangent-Org/WTangent/commit/89f53c39f2d9ada47528d9f29f4183c2a43d767c))
+
 ## [0.8.1](https://github.com/WTangent-Org/WTangent/compare/v0.8.0...v0.8.1) (2026-08-24)
 
 
