@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: WTangent
 
       - uses: actions/checkout@v4
         with:
@@ -35,4 +37,4 @@ jobs:
           path: WTangent.Components
 
       - name: dotnet build（Release）
-        run: dotnet build WTangent.csproj -c Release --nologo
+        run: dotnet build WTangent/WTangent.csproj -c Release --nologo
