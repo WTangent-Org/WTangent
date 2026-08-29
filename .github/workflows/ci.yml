@@ -28,5 +28,11 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # Core/生成器源码(平级目录,与工作区布局一致;ProjectReference 相对路径依赖此布局)
+      - uses: actions/checkout@v4
+        with:
+          repository: WTangent-Org/WTangent.Components
+          path: WTangent.Components
+
       - name: dotnet build（Release）
         run: dotnet build WTangent.csproj -c Release --nologo

@@ -1,18 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <ItemGroup Condition="'$(WTangentLocal)' != 'true'">
-    <PackageReference Include="System.CommandLine" Version="2.0.10"/>
-    <!-- 运行时契约（Application/ITool 等）：宿主实现并注入组件 -->
-    <PackageReference Include="WTangent.Components" Version="0.0.11" PrivateAssets="all"/>
-  </ItemGroup>
-
-  <!-- 本地开发开关（-p:WTangentLocal=true，配工作区根 dev-install.ps1）：直接引用 Core 源码 + 生成器项目，
-       绕过 nuget 等索引传播。空壳是宿主：Core 必须拷进输出（不设 Private=false），组件运行时统一用这份 -->
-  <ItemGroup Condition="'$(WTangentLocal)' == 'true'">
+  <!-- Core/生成器:平级 WTangent.Components 仓源码引用(工作区与 CI 同布局)。空壳是宿主:
+       Core 必须拷进输出(不设 Private=false),组件运行时统一用这份 -->
+  <ItemGroup>
     <PackageReference Include="System.CommandLine" Version="2.0.10"/>
     <ProjectReference Include="..\WTangent.Components\src\WTangent.Core\WTangent.Core.csproj"/>
     <ProjectReference Include="..\WTangent.Components\src\WTangent.Components\Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" Private="false"/>
-    <!-- ProjectReference 不经包的 buildTransitive props，生成器需要的属性这里手动声明（与包内 props 一致） -->
     <CompilerVisibleProperty Include="ProjectDir"/>
     <CompilerVisibleProperty Include="AssemblyName"/>
     <CompilerVisibleProperty Include="ComponentDepends"/>

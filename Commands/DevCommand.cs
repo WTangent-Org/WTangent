@@ -1,6 +1,5 @@
 using System.CommandLine;
 using System.Diagnostics;
-using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
@@ -13,7 +12,7 @@ namespace WTangent.Commands;
 /// dev build   = 用 restore 的 props 编译（-p:WTangentDev=true + CustomBeforeMicrosoftCommonProps，不改 csproj）；
 /// dev install = 本地构建并部署组件到 components 目录（官方组件走工作区 WTangentLocal 源码引用；
 ///   任意仓库用 --proj 走 restore 的引用缓存）。
-/// 分发渠道全部是 GitHub release；nuget 仅作 --core-source nuget 备用通道。System.CommandLine 由
+/// 分发渠道只有 GitHub release（Core 也是组件，与组件 zip 同一条线，不经任何包平台）。System.CommandLine 由
 /// 组件 csproj 自己包引用提供，restore 不重复注入（避免同程序集双 Reference）。</summary>
 public sealed class DevCommand : Command
 {
@@ -171,23 +170,18 @@ public sealed class DevCommand : Command
     private static Command BuildRestore()
     {
         var rootOpt = new Option<string?>("--root") { Description = "组件仓库根（含 agent-component.json，缺省当前目录）" };
-        var source = new Option<string>("--core-source")
-        {
-            Description = "Core/生成器下载通道（github = release 资产直拉；nuget = nupkg 解包备用）",
-            DefaultValueFactory = _ => "github",
-        };
         var coreVer = new Option<string?>("--core-version")
         {
-            Description = "Core 版本（github = release tag 如 v0.0.12，缺省最新；nuget = 包版本，缺省最新）",
+            Description = "Core release tag（如 v0.0.12；缺省取最新 release 资产）",
         };
         var force = new Option<bool>("--force") { Description = "忽略缓存重新下载" };
         var restore = new Command("restore",
             "按 agent-component.json 拉齐开发依赖：depends 组件补装 + Core/生成器 GitHub release 直拉 + 生成 wtangent.dev.props")
-            { rootOpt, source, coreVer, force };
+            { rootOpt, coreVer, force };
         restore.SetAction(async pr =>
         {
             var root = pr.GetValue(rootOpt) ?? Directory.GetCurrentDirectory();
-            var rc = await RestoreAsync(root, pr.GetValue(source) ?? "github", pr.GetValue(coreVer), pr.GetValue(force));
+            var rc = await RestoreAsync(root, pr.GetValue(coreVer), pr.GetValue(force));
             if (rc == 0)
                 Console.WriteLine($"""
                     [dev] 完成。编译：wtangent dev build --root "{root}"
@@ -197,7 +191,7 @@ public sealed class DevCommand : Command
         return restore;
     }
 
-    private static async Task<int> RestoreAsync(string root, string source, string? coreVersionOpt, bool force)
+    private static async Task<int> RestoreAsync(string root, string? coreVersionOpt, bool force)
     {
         var manifestFile = Path.Combine(root, "agent-component.json");
         if (!File.Exists(manifestFile))
@@ -217,43 +211,29 @@ public sealed class DevCommand : Command
         // 1) depends 组件：走完整安装链（自动拉装/版本门禁/传递依赖），装进 components 目录供运行时加载与编译引用
         if (await RestoreDependsAsync(manifest) != 0) return 1;
 
-        // 2) Core + 生成器：默认 GitHub release 资产直拉（与组件 zip 同通道）；nuget 为备用
-        string coreDll, genDll, version;
-        if (source == "nuget")
+        // 2) Core + 生成器：GitHub release 资产直拉（Core 也是组件，分发与组件 zip 同一条线）
+        var tag = coreVersionOpt is null ? "latest" : coreVersionOpt.StartsWith('v') ? coreVersionOpt : "v" + coreVersionOpt;
+        var base_ = tag == "latest"
+            ? $"https://github.com/WTangent-Org/{CoreRepo}/releases/latest/download"
+            : $"https://github.com/WTangent-Org/{CoreRepo}/releases/download/{tag}";
+        var dir = Path.Combine(RefsRoot(), "wtangent.components", tag);
+        var coreDll = Path.Combine(dir, "WTangent.Core.dll");
+        var genDll = Path.Combine(dir, "WTangent.Components.dll");
+        if (force || !File.Exists(coreDll) || !File.Exists(genDll))
         {
-            version = coreVersionOpt ?? await LatestNuGetCoreVersionAsync() ?? "(unknown)";
-            if (version == "(unknown)") return 1;
-            var pkgDir = await NuGetPkgDirAsync("wtangent.components", version, force);
-            if (pkgDir is null) return 1;
-            coreDll = Path.Combine(pkgDir, "lib", "net10.0", "WTangent.Core.dll");
-            genDll = Path.Combine(pkgDir, "analyzers", "dotnet", "cs", "WTangent.Components.dll");
-        }
-        else
-        {
-            var tag = coreVersionOpt is null ? "latest" : coreVersionOpt.StartsWith('v') ? coreVersionOpt : "v" + coreVersionOpt;
-            var base_ = tag == "latest"
-                ? $"https://github.com/WTangent-Org/{CoreRepo}/releases/latest/download"
-                : $"https://github.com/WTangent-Org/{CoreRepo}/releases/download/{tag}";
-            var dir = Path.Combine(RefsRoot(), "wtangent.components", tag);
-            coreDll = Path.Combine(dir, "WTangent.Core.dll");
-            genDll = Path.Combine(dir, "WTangent.Components.dll");
-            if (force || !File.Exists(coreDll) || !File.Exists(genDll))
-            {
-                Directory.CreateDirectory(dir);
-                if (!await DownloadFileAsync($"{base_}/WTangent.Core.dll", coreDll)) return 1;
-                if (!await DownloadFileAsync($"{base_}/WTangent.Components.dll", genDll)) return 1;
-            }
-            version = tag;
+            Directory.CreateDirectory(dir);
+            if (!await DownloadFileAsync($"{base_}/WTangent.Core.dll", coreDll)) return 1;
+            if (!await DownloadFileAsync($"{base_}/WTangent.Components.dll", genDll)) return 1;
         }
         if (!File.Exists(coreDll) || !File.Exists(genDll))
         {
             Console.Error.WriteLine($"[dev] Core/生成器资产异常（缺文件）：{coreDll} / {genDll}");
             return 1;
         }
-        // 内容健全性检查：版本号新 ≠ 内容新（nuget 历史上混过老快照，semver 反而更高）
+        // 内容健全性检查：tag 新 ≠ 内容对（防 release 资产挂错/缺内容的老快照流进引用缓存）
         if (!await ContainsBytesAsync(coreDll, new byte[] { 0x49, 0x45, 0x6E, 0x74, 0x72, 0x79 }))   // "IEntry"
         {
-            Console.Error.WriteLine($"[dev] {version} 的 Core.dll 缺 IEntry（老快照？），用 --core-version 指定发布线版本（如 0.0.11）");
+            Console.Error.WriteLine($"[dev] {tag} 的 Core.dll 缺 IEntry（资产异常），换 --core-version 指定其他 tag");
             return 1;
         }
 
@@ -291,7 +271,7 @@ public sealed class DevCommand : Command
         var propsFile = RefsPropsFile();
         Directory.CreateDirectory(Path.GetDirectoryName(propsFile)!);
         await File.WriteAllTextAsync(propsFile, string.Join(Environment.NewLine, propsLines));
-        Console.WriteLine($"[dev] Core {version} + 生成器已缓存；props → {propsFile}");
+        Console.WriteLine($"[dev] Core {tag} + 生成器已缓存；props → {propsFile}");
         return 0;
     }
 
@@ -327,7 +307,7 @@ public sealed class DevCommand : Command
             {
                 Console.Error.WriteLine($"[dev] 下载失败：HTTP {(int)resp.StatusCode}（{url}）");
                 if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
-                    Console.Error.WriteLine("[dev] release 上还没有该资产——Components 下次发版后自动可用，或临时 --core-source nuget");
+                    Console.Error.WriteLine("[dev] release 上还没有该资产——Components 发版（挂 Core/生成器 dll）后自动可用，或 --core-version 指定已挂资产的 tag");
                 return false;
             }
             using var fs = File.Create(dest);
@@ -338,56 +318,6 @@ public sealed class DevCommand : Command
         {
             Console.Error.WriteLine($"[dev] 下载失败：{e.Message}");
             return false;
-        }
-    }
-
-    /// <summary>nuget 上 wtangent.components 的最新版本（flat container index.json，版本升序取末尾）</summary>
-    private static async Task<string?> LatestNuGetCoreVersionAsync()
-    {
-        try
-        {
-            var json = await Http.GetStringAsync($"https://api.nuget.org/v3-flatcontainer/wtangent.components/index.json");
-            using var doc = JsonDocument.Parse(json);
-            string? last = null;
-            foreach (var v in doc.RootElement.GetProperty("versions").EnumerateArray())
-                last = v.GetString();
-            if (last is null) Console.Error.WriteLine("[dev] nuget 上没有 wtangent.components 版本");
-            return last;
-        }
-        catch (Exception e)
-        {
-            Console.Error.WriteLine($"[dev] 查询 nuget 版本失败：{e.Message}");
-            return null;
-        }
-    }
-
-    /// <summary>下载并解包 nupkg 到 refs 缓存（.done 标记幂等；--force 重拉）；返回解包目录</summary>
-    private static async Task<string?> NuGetPkgDirAsync(string id, string version, bool force)
-    {
-        var dir = Path.Combine(RefsRoot(), id, version);
-        if (!force && File.Exists(Path.Combine(dir, ".done"))) return dir;
-        var url = $"https://api.nuget.org/v3-flatcontainer/{id.ToLowerInvariant()}/{version}/{id}.{version}.nupkg";
-        var zip = Path.Combine(Path.GetTempPath(), $"{id}.{version}.nupkg");
-        Console.WriteLine($"[dev] 拉取 {id} {version} ← {url}");
-        try
-        {
-            using var resp = await Http.GetAsync(url);
-            if (!resp.IsSuccessStatusCode)
-            {
-                Console.Error.WriteLine($"[dev] 下载失败：HTTP {(int)resp.StatusCode}（{url}）");
-                return null;
-            }
-            using (var fs = File.Create(zip))
-                await resp.Content.ReadAsStream().CopyToAsync(fs);
-            if (Directory.Exists(dir)) ComponentManager.DeleteDirRetry(dir);
-            ZipFile.ExtractToDirectory(zip, dir);
-            File.WriteAllText(Path.Combine(dir, ".done"), version);
-            return dir;
-        }
-        catch (Exception e)
-        {
-            Console.Error.WriteLine($"[dev] nupkg 拉取失败：{e.Message}");
-            return null;
         }
     }
 
